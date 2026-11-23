@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: Telegram join flow</title>
+<style>
+  :root { --accent:#6d28d9; --ink:#1c1b22; --mute:#6b6a75; --line:#e4e2ea; --bg:#faf9fc; --card:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; color:var(--ink); background:var(--bg); }
+  main { max-width:1100px; margin:0 auto; padding:28px 20px 60px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); margin:0 0 10px; }
+  .banner { background:#f1ecfb; border:1px solid #ddd0f5; border-radius:10px; padding:12px 16px; margin:14px 0 22px; }
+  .banner b { color:var(--accent); }
+  .grid { display:grid; grid-template-columns:420px 1fr; gap:22px; align-items:start; }
+  @media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .ids { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+  .ids button, .chips button, .tabs button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:999px; padding:4px 12px; cursor:pointer; }
+  .ids button.on, .tabs button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .chat { height:420px; overflow:auto; background:#f4f2f8; border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .msg { max-width:88%; padding:8px 11px; border-radius:12px; white-space:pre-wrap; word-wrap:break-word; }
+  .msg.bot { background:#fff; border:1px solid var(--line); align-self:flex-start; }
+  .msg.user { background:var(--accent); color:#fff; align-self:flex-end; }
+  .msg.tap { background:#ddd0f5; color:var(--ink); }
+  .kb { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .kb button { font:inherit; border:1px solid var(--accent); color:var(--accent); background:#fff; border-radius:8px; padding:4px 10px; cursor:pointer; }
+  .kb button.chosen { background:var(--accent); color:#fff; }
+  .row { display:flex; gap:8px; margin-top:10px; }
+  .row input { flex:1; font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:8px; }
+  .row button, .primary { font:inherit; background:var(--accent); color:#fff; border:0; border-radius:8px; padding:8px 14px; cursor:pointer; }
+  .chips { margin-top:8px; display:flex; flex-wrap:wrap; gap:6px; }
+  .chips button { font-size:13px; padding:2px 10px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th,td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--mute); font-weight:600; }
+  .changed { background:#f1ecfb; border:1px solid #ddd0f5; padding:8px 12px; border-radius:6px; min-height:40px; }
+  .changed ul { margin:0; padding-left:18px; }
+  .muted { color:var(--mute); }
+  section { margin-top:22px; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .steps { display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
+  .steps button { font:inherit; text-align:left; border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 12px; cursor:pointer; }
+  .steps button.next { border-color:var(--accent); box-shadow:0 0 0 2px #ddd0f5; }
+  .steps button.done { color:var(--mute); background:#f4f2f8; }
+  code { background:#f4f2f8; padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>PROTOTYPE: joining and using the FPL bot in Telegram</h1>
+  <div class="banner">
+    <b>Question this answers:</b> does the Phase-1 Telegram flow hold up when you push awkward cases through it?
+    Invite-only access (single-use invite codes) &rarr; link an FPL team ID &rarr; confirm the team name &rarr; pick a Goal (and a mini-league) &rarr; timezone &rarr; Watch list, settings and leaving.
+    Try: a stranger, a reused code, a wrong or already-linked team ID, a button tapped twice, a Member with no mini-league, an ambiguous Footballer name, and leaving.
+    <br><span class="muted">Throwaway. FPL data below is made-up sample data, and /squad, /rivals and /gap are stubs: their content is designed in other tickets. Switch who is chatting with the tabs above the phone.</span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Telegram (simulated)</h2>
+      <div class="ids" id="ids"></div>
+      <div class="chat" id="chat"></div>
+      <form class="row" id="form"><input id="text" autocomplete="off" placeholder="Type a message or command…"><button>Send</button></form>
+      <div class="chips" id="chips"></div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>What just changed</h2>
+        <div class="changed" id="changed"></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h2>Bot's memory</h2>
+        <div id="state"></div>
+      </div>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Guided walkthroughs</h2>
+    <div class="tabs" id="tabs"></div>
+    <p id="sdesc"></p>
+    <div class="steps" id="steps"></div>
+    <p><button class="primary" id="restart">Restart this walkthrough</button> <button class="primary" id="reset" style="background:#6b6a75">Reset everything (free play)</button></p>
+  </section>
+</main>
+
+<script>
+/* ============================================================
+   PORTABLE MODULE: pure, no DOM. handle(state, event) -> {state}
+   event = {chat, type:'text', text} | {chat, type:'button', data, seq}
+   ============================================================ */
+const FplBot = (() => {
+  const OWNER = 'owner';
+  const MAX_MEMBERS = 10;
+  const NAMES = { owner:'Owner', alice:'Alice', bob:'Bob', stranger:'Stranger' };
+  const CODES = ['K7QX','M2PD','R9TB','W4NC','H8ZE','F3LV','B6YA','T5GJ','D1US','X0RK','P7MN','Q2WE'];
+  const TEAMS = {
+    1001:{ name:"Alex's Aces",   manager:'Alex K.',  rank:84213,   leagues:[{id:501,name:'Office League'},{id:502,name:'Sunday Pub XI'}] },
+    1002:{ name:'Bojan United',  manager:'Bojan M.', rank:412889,  leagues:[{id:501,name:'Office League'}] },
+    1003:{ name:'No League FC',  manager:'Clara P.', rank:1203441, leagues:[] },
+  };
+  const PLAYERS = [
+    {id:1,name:'Salah',pos:'MID',club:'LIV',price:13.2}, {id:2,name:'Haaland',pos:'FWD',club:'MCI',price:15.1},
+    {id:3,name:'Saka',pos:'MID',club:'ARS',price:10.0},  {id:4,name:'Palmer',pos:'MID',club:'CHE',price:10.6},
+    {id:5,name:'Gabriel',pos:'DEF',club:'ARS',price:6.1},{id:6,name:'Gabriel Jesus',pos:'FWD',club:'ARS',price:7.0},
+    {id:7,name:'Watkins',pos:'FWD',club:'AVL',price:9.0},{id:8,name:'Son',pos:'MID',club:'SPU',price:9.8},
+  ];
+  const TZ_BUTTONS = ['Europe/London','Europe/Paris','America/New_York','Asia/Kolkata'];
+  const CITY = { ljubljana:'Europe/Ljubljana', london:'Europe/London', paris:'Europe/Paris', berlin:'Europe/Berlin', sydney:'Australia/Sydney', 'new york':'America/New_York' };
+  const KNOWN_TZ = new Set([...TZ_BUTTONS, ...Object.values(CITY)]);
+
+  const initial = (opts = {}) => {
+    const s = { invites:{}, nextCode:0, members:{}, chats:{}, changes:[] };
+    if (opts.full) for (let i = 0; i < MAX_MEMBERS; i++) s.members['seed'+i] = { status:'active', teamId:null, teamName:'(seeded member '+(i+1)+')', goal:'overall', tz:'Europe/London', alertTime:'20:00', watch:[] };
+    return s;
+  };
+
+  const chat = (s, id) => s.chats[id] || (s.chats[id] = { step:null, seq:0, kbSeq:null, pending:null, log:[] });
+  const say = (c, text, buttons) => {
+    c.seq++;
+    c.log.push({ from:'bot', text, seq:c.seq, buttons: buttons ? buttons.map(([id,label]) => ({id,label})) : null, chosen:null });
+    c.kbSeq = buttons ? c.seq : null;
+  };
+  const note = (s, t) => s.changes.push(t);
+  const find = q => PLAYERS.filter(p => p.name.toLowerCase().includes(q.toLowerCase()));
+  const goalText = m => m.goal === 'league' ? 'Mini-league: ' + m.leagueName : 'Overall rank';
+  const summary = m => `Team: ${m.teamName} (ID ${m.teamId})\nGoal: ${goalText(m)}\nTimezone: ${m.tz}\nPrice alert: ${m.alertTime} your time, only on nights with something to report\nWatch list: ${m.watch.length ? m.watch.map(id => PLAYERS.find(p=>p.id===id).name).join(', ') : 'empty'}`;
+  const HELP = `/squad  your Squad this Gameweek\n/rivals  your Rivals\n/gap  your Elite gap and Rival gap\n/watch  show your Watch list\n/watch add <name>\n/watch remove <name>\n/goal  switch Goal\n/time HH:MM  Price alert time\n/tz  change timezone\n/settings  show everything I know about you\n/leave  delete your data and leave`;
+
+  // ---- onboarding / settings chain: ask for whatever is still missing ----
+  function advance(s, c, m) {
+    if (!m.teamId) { c.step='team_id'; say(c, 'Send me your FPL team ID.\nYou can find it in the address bar on the FPL site, in the number after /entry/ (open the Points tab).'); return; }
+    if (!m.goal) return askGoal(c);
+    if (m.goal === 'league' && !m.leagueId) return askLeague(c, m);
+    if (!m.tz) return askTz(c);
+    c.step = null;
+    if (m.status === 'joining') {
+      m.status = 'active';
+      note(s, `${NAMES[s.who]} finished setup and is now an active Member.`);
+      say(c, `You're all set, ${m.teamName}.\n\n${summary(m)}\n\nCommands:\n${HELP}`);
+    } else say(c, 'Saved.\n\n' + summary(m));
+  }
+  const askGoal = c => { c.step='goal'; say(c, 'What should my advice aim for?\n• Overall rank (the default)\n• Mini-league: stay ahead of the Rivals in one league\nYou can switch any time with /goal.', [['overall','Overall rank'],['league','Mini-league']]); };
+  const askLeague = (c, m) => { c.step='league'; say(c, 'Which mini-league?', TEAMS[m.teamId].leagues.map(l => ['L'+l.id, l.name])); };
+  const askTz = c => { c.step='tz'; say(c, 'Which timezone are you in? Your nightly Price alert goes out at 20:00 your time (change it with /time).', [...TZ_BUTTONS.map(z => ['tz:'+z, z]), ['other','Other…']]); };
+
+  function onText(s, c, id, m, t) {
+    const [cmd, ...rest] = t.split(/\s+/); const arg = rest.join(' ').trim();
+    const isCmd = t.startsWith('/');
+
+    if (id === OWNER && cmd === '/invite') {
+      const code = CODES[s.nextCode++ % CODES.length];
+      s.invites[code] = { usedBy:null };
+      note(s, `New single-use invite code ${code} created.`);
+      say(c, `Invite link (single use, expires in 7 days):\nhttps://t.me/FplAdvisorBot?start=${code}`);
+      return;
+    }
+    if (!m) {
+      if (cmd !== '/start') { say(c, 'This bot is invite-only. Ask the owner for an invite link.'); return; }
+      if (id !== OWNER) {
+        const code = arg.toUpperCase(); const inv = s.invites[code];
+        if (!arg) return say(c, 'This bot is invite-only. Ask the owner for an invite link.');
+        if (!inv) return say(c, "That invite code isn't valid.");
+        if (inv.usedBy) return say(c, 'That invite code has already been used. Ask the owner for a new one.');
+        if (Object.keys(s.members).length >= MAX_MEMBERS) return say(c, `Sorry, this bot is full (${MAX_MEMBERS} Members).`);
+        inv.usedBy = NAMES[id]; note(s, `Invite ${code} used up by ${NAMES[id]}.`);
+      }
+      s.members[id] = { status:'joining', teamId:null, teamName:null, goal:null, leagueId:null, leagueName:null, tz:null, alertTime:'20:00', watch:[] };
+      note(s, `${NAMES[id]}'s chat is now on the allow-list (still joining).`);
+      say(c, 'Welcome! I give FPL advice. I never ask for your FPL password, and you make every change yourself.');
+      return advance(s, c, s.members[id]);
+    }
+
+    if (isCmd) {                       // any command abandons the current question
+      c.step = null; c.kbSeq = null; c.pending = null;
+      if (m.status === 'joining' && !['/start','/leave'].includes(cmd)) { say(c, "Let's finish setting you up first."); return advance(s, c, m); }
+      return command(s, c, id, m, cmd, arg);
+    }
+
+    switch (c.step) {
+      case 'team_id': {
+        if (!/^\d{1,9}$/.test(t)) return say(c, "That doesn't look like a team ID. It's just digits, like 1234567.");
+        const team = TEAMS[t];
+        if (!team) return say(c, `I couldn't find an FPL team with ID ${t}. Check the number and send it again.`);
+        const owner = Object.entries(s.members).find(([k, x]) => x.teamId === +t && k !== id);
+        if (owner) { note(s, `Refused: team ${t} is already linked to ${NAMES[owner[0]]||owner[0]}.`); return say(c, 'That team is already linked to another Member. If that is a mistake, ask the owner.'); }
+        c.pending = { teamId:+t }; c.step = 'confirm_team';
+        return say(c, `Found "${team.name}", managed by ${team.manager}, overall rank ${team.rank.toLocaleString()}.\nIs that you?`, [['yes',"Yes, that's me"],['no','No, wrong team']]);
+      }
+      case 'tz_text': {
+        const key = t.toLowerCase(); const z = CITY[key] || [...KNOWN_TZ].find(k => k.toLowerCase() === key);
+        if (!z) return say(c, `I don't know "${t}". Try a city (Ljubljana, Sydney…) or a zone name like Europe/Berlin.`);
+        m.tz = z; note(s, `${NAMES[id]}'s timezone set to ${z}.`); return advance(s, c, m);
+      }
+      default: return say(c, "I didn't catch that. /help shows what I can do.");
+    }
+  }
+
+  function command(s, c, id, m, cmd, arg) {
+    switch (cmd) {
+      case '/start': return m.status === 'joining' ? advance(s, c, m) : say(c, `Welcome back, ${m.teamName}.\n\n${HELP}`);
+      case '/help': return say(c, HELP);
+      case '/cancel': return say(c, 'Okay, cancelled.');
+      case '/settings': return say(c, summary(m));
+      case '/squad': return say(c, `[stub] ${m.teamName}: Squad for the next Gameweek\nGK Raya · DEF Gabriel, … · MID Salah (C), Saka … · FWD Haaland …\nBench: …`);
+      case '/rivals': return say(c, m.goal === 'league' ? `[stub] Rivals in ${m.leagueName}: the 4 Managers closest to you, plus your head-to-head opponent.` : '[stub] Rivals: your head-to-head opponent plus the Managers around you in your mini-leagues.');
+      case '/gap': return say(c, `[stub] Elite gap (top 10k): you are missing Haaland (owned by 71%), and own Saka (owned by 18%).\nRival gap: …`);
+      case '/goal': return askGoal(c);
+      case '/tz': return askTz(c);
+      case '/time': {
+        if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(arg)) return say(c, 'Use 24-hour time, like /time 19:30.');
+        m.alertTime = arg.padStart(5,'0'); note(s, `${NAMES[id]}'s Price alert time is now ${m.alertTime}.`); return say(c, `Done. Price alerts at ${m.alertTime} ${m.tz} time.`);
+      }
+      case '/watch': {
+        const [sub, ...q] = arg.split(/\s+/); const name = q.join(' ');
+        if (!arg) return say(c, m.watch.length ? 'Your Watch list:\n' + m.watch.map(pid => { const p = PLAYERS.find(x=>x.id===pid); return `${p.name} (${p.club}, ${p.pos}) £${p.price}m`; }).join('\n') + '\n\nI will tell you in the Price alert if any may rise.' : 'Your Watch list is empty. Try /watch add Salah');
+        if (sub === 'add' && name) {
+          const hits = find(name);
+          if (!hits.length) return say(c, `No Footballer matches "${name}".`);
+          if (hits.length > 1) { c.step = 'watch_pick'; return say(c, `Several Footballers match "${name}". Which one?`, hits.map(p => ['w:'+p.id, `${p.name} (${p.club}, ${p.pos})`])); }
+          return addWatch(s, c, id, m, hits[0]);
+        }
+        if (sub === 'remove' && name) {
+          const hit = m.watch.map(pid => PLAYERS.find(x=>x.id===pid)).filter(p => p.name.toLowerCase().includes(name.toLowerCase()));
+          if (!hit.length) return say(c, `"${name}" isn't on your Watch list.`);
+          m.watch = m.watch.filter(pid => pid !== hit[0].id); note(s, `${NAMES[id]} removed ${hit[0].name} from their Watch list.`);
+          return say(c, `Removed ${hit[0].name}.`);
+        }
+        return say(c, 'Use /watch, /watch add <name> or /watch remove <name>.');
+      }
+      case '/leave': c.step = 'confirm_leave';
+        return say(c, 'This deletes everything I store about you: your team ID, Goal, Watch list, timezone and chat ID. Your invite code cannot be reused. Continue?', [['leave_yes','Delete my data'],['leave_no','Keep me']]);
+      default: return say(c, "I don't know that command. /help shows what I can do.");
+    }
+  }
+
+  function addWatch(s, c, id, m, p) {
+    c.step = null;
+    if (m.watch.includes(p.id)) return say(c, `${p.name} is already on your Watch list.`);
+    if (m.watch.length >= 20) return say(c, 'Your Watch list is full (20). Remove someone first.');
+    m.watch.push(p.id); note(s, `${NAMES[id]} added ${p.name} to their Watch list.`);
+    say(c, `Added ${p.name} (${p.club}, ${p.pos}) at £${p.price}m. I'll flag him in the Price alert if he may rise.`);
+  }
+
+  function onButton(s, c, id, m, data) {
+    switch (c.step) {
+      case 'confirm_team':
+        if (data === 'yes') { const t = TEAMS[c.pending.teamId]; m.teamId = c.pending.teamId; m.teamName = t.name; c.pending = null; note(s, `${NAMES[id]} linked team ${m.teamId} "${m.teamName}".`); return advance(s, c, m); }
+        c.pending = null; c.step = 'team_id'; return say(c, 'No problem. Send the correct team ID.');
+      case 'goal':
+        if (data === 'overall') { m.goal = 'overall'; m.leagueId = m.leagueName = null; note(s, `${NAMES[id]}'s Goal is Overall rank.`); return advance(s, c, m); }
+        if (!TEAMS[m.teamId].leagues.length) { m.goal = 'overall'; m.leagueId = m.leagueName = null; note(s, `${NAMES[id]} has no private mini-league, so Goal stays Overall rank.`); say(c, "You're not in any private mini-league yet, so I've set your Goal to Overall rank. Switch with /goal once you join one."); return advance(s, c, m); }
+        return askLeague(c, m);
+      case 'league': {
+        const l = TEAMS[m.teamId].leagues.find(x => 'L'+x.id === data);
+        m.goal = 'league'; m.leagueId = l.id; m.leagueName = l.name; note(s, `${NAMES[id]}'s Goal is Mini-league: ${l.name}.`); return advance(s, c, m);
+      }
+      case 'tz':
+        if (data === 'other') { c.step = 'tz_text'; return say(c, 'Type your city or timezone (for example Ljubljana or Europe/Berlin).'); }
+        m.tz = data.slice(3); note(s, `${NAMES[id]}'s timezone set to ${m.tz}.`); return advance(s, c, m);
+      case 'watch_pick': return addWatch(s, c, id, m, PLAYERS.find(p => 'w:'+p.id === data));
+      case 'confirm_leave':
+        if (data === 'leave_no') { c.step = null; return say(c, 'Okay, nothing deleted.'); }
+        delete s.members[id]; c.step = null; c.pending = null; note(s, `${NAMES[id]} left: member record and Watch list deleted. Their invite stays used.`);
+        return say(c, 'Done. Everything I stored about you is deleted. To rejoin you need a new invite.');
+    }
+  }
+
+  function handle(state, ev) {
+    const s = structuredClone(state); s.changes = []; s.who = ev.chat;
+    const c = chat(s, ev.chat); const m = s.members[ev.chat] || null;
+    if (ev.type === 'text') { c.log.push({ from:'user', text:ev.text }); onText(s, c, ev.chat, m, ev.text.trim()); }
+    else {
+      const msg = c.log.find(x => x.seq === ev.seq && x.buttons);
+      const hit = msg && msg.buttons.find(b => b.id === ev.data);
+      const label = hit ? hit.label : ev.data;
+      c.log.push({ from:'user', text:label, tap:true });
+      if (!m || ev.seq !== c.kbSeq) { note(s, 'Old button tapped: ignored, nothing changed.'); say(c, 'That button is out of date. Send /help to see what you can do.'); }
+      else { msg.chosen = ev.data; c.kbSeq = null; onButton(s, c, ev.chat, m, ev.data); }
+    }
+    delete s.who; return { state: s };
+  }
+  return { initial, handle, NAMES };
+})();
+
+/* ===================== THROWAWAY PAGE SHELL ===================== */
+let S = FplBot.initial(), who = 'owner', lastPressed = {};
+const $ = id => document.getElementById(id);
+const esc = t => String(t).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const send = ev => { S = FplBot.handle(S, ev).state; render(); };
+const sendText = (chat, text) => { who = chat; send({ chat, type:'text', text }); };
+const sendButton = (chat, data, seq) => { who = chat; lastPressed[chat] = seq; send({ chat, type:'button', data, seq }); };
+
+function render() {
+  const c = S.chats[who];
+  $('ids').innerHTML = Object.keys(FplBot.NAMES).map(k => `<button class="${k===who?'on':''}" data-id="${k}">${FplBot.NAMES[k]}</button>`).join('');
+  $('ids').querySelectorAll('button').forEach(b => b.onclick = () => { who = b.dataset.id; render(); });
+  const log = c ? c.log : [];
+  $('chat').innerHTML = log.length ? log.map(e => {
+    if (e.from === 'user') return `<div class="msg user ${e.tap?'tap':''}">${esc(e.text)}</div>`;
+    const kb = e.buttons ? `<div class="kb">${e.buttons.map(b => `<button data-seq="${e.seq}" data-d="${esc(b.id)}" class="${e.chosen===b.id?'chosen':''}">${esc(b.label)}</button>`).join('')}</div>` : '';
+    return `<div class="msg bot">${esc(e.text)}${kb}</div>`;
+  }).join('') : `<div class="muted">No messages yet. ${who==='owner'?'As the owner, try /invite.':'Try /start.'}</div>`;
+  $('chat').querySelectorAll('.kb button').forEach(b => b.onclick = () => sendButton(who, b.dataset.d, +b.dataset.seq));
+  $('chat').scrollTop = 1e9;
+  const unused = Object.entries(S.invites).filter(([,v]) => !v.usedBy).map(([k]) => '/start ' + k);
+  $('chips').innerHTML = (who==='owner' ? ['/invite'] : unused).concat(['/start','/help','/squad','/rivals','/gap','/watch','/goal','/tz','/settings','/leave']).map(x => `<button>${x}</button>`).join('');
+  $('chips').querySelectorAll('button').forEach(b => b.onclick = () => sendText(who, b.textContent));
+
+  $('changed').innerHTML = S.changes.length ? `<ul>${S.changes.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<span class="muted">Nothing yet: send a message.</span>';
+
+  const inv = Object.entries(S.invites), mem = Object.entries(S.members);
+  const step = c && c.step ? c.step : '—';
+  $('state').innerHTML =
+    `<p class="muted" style="margin-top:0">Chat being viewed (${FplBot.NAMES[who]}) is waiting for: <b>${esc(step)}</b></p>` +
+    `<h2>Invite codes</h2>` + (inv.length ? `<table><tr><th>Code</th><th>Status</th></tr>${inv.map(([k,v]) => `<tr><td><code>${k}</code></td><td>${v.usedBy ? 'used by '+esc(v.usedBy) : 'unused'}</td></tr>`).join('')}</table>` : '<p class="muted">None created.</p>') +
+    `<h2 style="margin-top:14px">Members on the allow-list (${mem.length} of 10)</h2>` +
+    (mem.length ? `<table><tr><th>Chat</th><th>Status</th><th>Team</th><th>Goal</th><th>Timezone / alert</th><th>Watch list</th></tr>${mem.filter(([k]) => !k.startsWith('seed')).map(([k,m]) =>
+      `<tr><td>${FplBot.NAMES[k]||k}</td><td>${m.status}</td><td>${m.teamName?esc(m.teamName)+' ('+m.teamId+')':'—'}</td><td>${m.goal?(m.goal==='league'?'Mini-league: '+esc(m.leagueName):'Overall rank'):'—'}</td><td>${m.tz?m.tz+' / '+m.alertTime:'—'}</td><td>${m.watch.length||'—'}</td></tr>`).join('')}</table>` + (mem.some(([k])=>k.startsWith('seed')) ? '<p class="muted">+10 seeded Members (bot is full).</p>' : '') : '<p class="muted">Nobody yet.</p>');
+}
+$('form').onsubmit = e => { e.preventDefault(); const t = $('text').value.trim(); if (t) { sendText(who, t); $('text').value=''; } };
+
+/* ---- walkthroughs: setup runs silently on start; steps are buttons ---- */
+const T = (chat, text) => ({ label:`${FplBot.NAMES[chat]} types: ${text}`, run:() => sendText(chat, text) });
+const B = (chat, data, label, stale) => ({ label:`${FplBot.NAMES[chat]} taps: ${label}${stale?' (the same button again)':''}`, run:() => { const c = S.chats[chat]; sendButton(chat, data, stale ? lastPressed[chat] : c.kbSeq); } });
+const SC = [
+  { name:'Happy path', desc:'Alice joins with an invite and reaches a working setup. Watch the allow-list and the "waiting for" step on the right.',
+    setup:[], steps:[T('owner','/invite'), T('alice','/start K7QX'), T('alice','1001'), B('alice','yes',"Yes, that's me"), B('alice','league','Mini-league'), B('alice','L501','Office League'), B('alice','tz:Europe/London','Europe/London'), T('alice','/watch add salah'), T('alice','/squad')] },
+  { name:'Strangers & bad codes', desc:'Someone not invited, a made-up code, and a code that has already been used. Is the allow-list holding?',
+    setup:[], steps:[T('stranger','/start'), T('stranger','hello'), T('stranger','/start WRONG'), T('owner','/invite'), T('alice','/start K7QX'), T('bob','/start K7QX')] },
+  { name:'Wrong team ID', desc:'Bad input, an unknown ID, then a real team that is not Alice\'s. She says no and corrects it.',
+    setup:[T('owner','/invite'), T('alice','/start K7QX')], steps:[T('alice','my id'), T('alice','9999'), T('alice','1002'), B('alice','no','No, wrong team'), T('alice','1001'), B('alice','yes',"Yes, that's me")] },
+  { name:'Same team twice', desc:'Bob tries to link a team Alice already linked. Decision to react to: refuse, and tell him to ask the owner.',
+    setup:[T('owner','/invite'), T('owner','/invite'), T('alice','/start K7QX'), T('alice','1001'), B('alice','yes',"Yes, that's me"), B('alice','overall','Overall rank'), B('alice','tz:Europe/Paris','Europe/Paris'), T('bob','/start M2PD')], steps:[T('bob','1001'), T('bob','1002')] },
+  { name:'Button tapped twice', desc:'Telegram buttons stay on screen. Tapping "Yes" a second time, or a button after switching to a command, must not redo or corrupt anything.',
+    setup:[T('owner','/invite'), T('alice','/start K7QX'), T('alice','1001')], steps:[B('alice','yes',"Yes, that's me"), B('alice','yes',"Yes, that's me",true), T('alice','/help'), B('alice','overall','Overall rank',true)] },
+  { name:'No mini-league', desc:'Clara\'s team is in no private league. She picks Mini-league anyway. What does the bot do?',
+    setup:[T('owner','/invite'), T('bob','/start K7QX'), T('bob','1003'), B('bob','yes',"Yes, that's me")], steps:[B('bob','league','Mini-league'), B('bob','tz:Asia/Kolkata','Asia/Kolkata'), T('bob','/goal')] },
+  { name:'Typed timezone', desc:'Alice picks "Other" and types a city; first a nonsense one, then Ljubljana. Then she moves her Price alert time.',
+    setup:[T('owner','/invite'), T('alice','/start K7QX'), T('alice','1001'), B('alice','yes',"Yes, that's me"), B('alice','overall','Overall rank')], steps:[B('alice','other','Other…'), T('alice','Atlantis'), T('alice','Ljubljana'), T('alice','/time 19:30'), T('alice','/time 25:00')] },
+  { name:'Ambiguous Watch list', desc:'"Gabriel" matches two Footballers. Then a dupe, a missing name, and removal.',
+    setup:[T('owner','/invite'), T('alice','/start K7QX'), T('alice','1001'), B('alice','yes',"Yes, that's me"), B('alice','overall','Overall rank'), B('alice','tz:Europe/London','Europe/London')], steps:[T('alice','/watch add gabriel'), B('alice','w:6','Gabriel Jesus'), T('alice','/watch add jesus'), T('alice','/watch add nobody'), T('alice','/watch'), T('alice','/watch remove jesus')] },
+  { name:'Leaving', desc:'Alice leaves and her data is deleted. Can she still talk to the bot afterwards? Can she reuse her code?',
+    setup:[T('owner','/invite'), T('alice','/start K7QX'), T('alice','1001'), B('alice','yes',"Yes, that's me"), B('alice','overall','Overall rank'), B('alice','tz:Europe/London','Europe/London'), T('alice','/watch add salah')], steps:[T('alice','/leave'), B('alice','leave_yes','Delete my data'), T('alice','/squad'), T('alice','/start K7QX')] },
+  { name:'Abandoned setup', desc:'Bob joins, then wanders off mid-setup, tries commands, and comes back with /start.',
+    setup:[T('owner','/invite'), T('bob','/start K7QX')], steps:[T('bob','/squad'), T('bob','/start')] },
+  { name:'Bot is full', desc:'Ten Members already exist. The owner makes an invite anyway; Bob cannot use it.',
+    setup:'FULL', steps:[T('owner','/invite'), T('bob','/start K7QX')] },
+];
+let cur = 0, done = [];
+function startScenario(i) {
+  cur = i; done = []; lastPressed = {};
+  S = FplBot.initial({ full: SC[i].setup === 'FULL' });
+  if (Array.isArray(SC[i].setup)) SC[i].setup.forEach(st => st.run());
+  S.changes = []; who = SC[i].steps[0].label.startsWith('Owner') ? 'owner' : who;
+  const first = SC[i].steps[0].label.split(' ')[0].toLowerCase(); if (FplBot.NAMES[first]) who = first;
+  renderWalk(); render();
+}
+function renderWalk() {
+  $('tabs').innerHTML = SC.map((s,i) => `<button class="${i===cur?'on':''}" data-i="${i}">${s.name}</button>`).join('');
+  $('tabs').querySelectorAll('button').forEach(b => b.onclick = () => startScenario(+b.dataset.i));
+  $('sdesc').textContent = SC[cur].desc;
+  const next = SC[cur].steps.findIndex((_, i) => !done.includes(i));
+  $('steps').innerHTML = SC[cur].steps.map((st, i) => `<button data-i="${i}" class="${done.includes(i)?'done':i===next?'next':''}">${i+1}. ${esc(st.label)}</button>`).join('');
+  $('steps').querySelectorAll('button').forEach(b => b.onclick = () => { SC[cur].steps[+b.dataset.i].run(); done.push(+b.dataset.i); renderWalk(); });
+}
+$('restart').onclick = () => startScenario(cur);
+$('reset').onclick = () => { S = FplBot.initial(); who = 'owner'; lastPressed = {}; done = []; renderWalk(); render(); };
+startScenario(0);
+</script>
+</body>
+</html>

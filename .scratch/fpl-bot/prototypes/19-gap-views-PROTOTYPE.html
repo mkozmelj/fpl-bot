@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: Elite gap, Rival gap, league view</title>
+<style>
+  :root { --accent:#6d28d9; --ink:#1c1b22; --mute:#6b6a75; --line:#e4e2ea; --bg:#faf9fc; --card:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; color:var(--ink); background:var(--bg); }
+  main { max-width:1180px; margin:0 auto; padding:28px 20px 60px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); margin:0 0 10px; }
+  .banner { background:#f1ecfb; border:1px solid #ddd0f5; border-radius:10px; padding:12px 16px; margin:14px 0 22px; }
+  .grid { display:grid; grid-template-columns:430px 1fr; gap:22px; align-items:start; }
+  @media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:18px; }
+  .chat { height:560px; overflow:auto; background:#f4f2f8; border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .msg { max-width:94%; padding:8px 11px; border-radius:12px; white-space:pre-wrap; word-wrap:break-word; font-size:13.5px; }
+  .msg.bot { background:#fff; border:1px solid var(--line); align-self:flex-start; font-family:ui-monospace,Menlo,monospace; }
+  .msg.user { background:var(--accent); color:#fff; align-self:flex-end; font-family:inherit; }
+  button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:8px; padding:4px 11px; cursor:pointer; }
+  button.cmd { border-color:var(--accent); color:var(--accent); }
+  button.on, .tabs button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .ctl { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0; }
+  .ctl b { min-width:92px; font-size:13px; color:var(--mute); font-weight:600; }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .steps { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+  .steps button { text-align:left; }
+  .steps button.done { opacity:.45; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mute); font-weight:600; }
+  .muted { color:var(--mute); font-size:13px; }
+  code { background:#f1ecfb; padding:0 4px; border-radius:4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>PROTOTYPE: Elite gap, Rival gap, league view</h1>
+  <div class="banner">
+    <b>Question:</b> how are the Elite gap and Rival gap computed and shown in Telegram, and what does the league progress view look like?
+    Phase 1 has no xP, so a proxy stands in. This page lets you switch the proxy, the Elite measure, how fresh the Elite figures are, and where we are relative to the deadline.
+    <br><span class="muted">All footballers, numbers and managers are invented. Throwaway: the logic is the <code>GAP</code> module in the script; the page is a thin shell.</span>
+  </div>
+
+  <div class="grid">
+    <div>
+      <h2>Telegram</h2>
+      <div class="card">
+        <div class="chat" id="chat"></div>
+        <div class="ctl" style="margin-top:10px">
+          <button class="cmd" onclick="send('/gap')">/gap</button>
+          <button class="cmd" onclick="send('/gap captain')">/gap captain</button>
+          <button class="cmd" onclick="send('/rivals')">/rivals</button>
+          <button class="cmd" onclick="send('/rivals all')">/rivals all</button>
+          <button class="cmd" onclick="send('/league')">/league</button>
+          <button onclick="clearChat()">clear</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h2>World (free play)</h2>
+      <div class="card" id="controls"></div>
+
+      <h2>Walkthroughs</h2>
+      <div class="card">
+        <div class="tabs" id="tabs"></div>
+        <div id="scenario"></div>
+      </div>
+
+      <h2>How the last answer was computed</h2>
+      <div class="card" id="explain"><span class="muted">Send a command.</span></div>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ============================ PURE LOGIC MODULE ============================ */
+const GAP = (() => {
+  // --- invented data ---------------------------------------------------------
+  const F = {
+    haaland:{n:'Haaland',pos:'FWD',form:7.4,xp:7.0,own:.86,xi:.84,cap:.58},
+    salah:{n:'Salah',pos:'MID',form:6.8,xp:6.6,own:.78,xi:.76,cap:.22},
+    palmer:{n:'Palmer',pos:'MID',form:5.9,xp:6.1,own:.52,xi:.49,cap:.06},
+    saka:{n:'Saka',pos:'MID',form:5.2,xp:5.4,own:.41,xi:.38,cap:.03},
+    bruno:{n:'Fernandes',pos:'MID',form:4.6,xp:5.0,own:.35,xi:.31,cap:.02},
+    isak:{n:'Isak',pos:'FWD',form:6.1,xp:6.0,own:.58,xi:.55,cap:.05},
+    mbeumo:{n:'Mbeumo',pos:'MID',form:5.5,xp:5.3,own:.44,xi:.41,cap:.01},
+    gabriel:{n:'Gabriel',pos:'DEF',form:5.0,xp:4.9,own:.55,xi:.52,cap:0},
+    saliba:{n:'Saliba',pos:'DEF',form:4.4,xp:4.6,own:.30,xi:.27,cap:0},
+    trent:{n:'Alexander-Arnold',pos:'DEF',form:4.8,xp:4.7,own:.33,xi:.30,cap:0},
+    porro:{n:'Porro',pos:'DEF',form:4.9,xp:4.8,own:.47,xi:.44,cap:0},
+    munoz:{n:'Muñoz',pos:'DEF',form:4.2,xp:4.4,own:.27,xi:.24,cap:0},
+    vvd:{n:'Van Dijk',pos:'DEF',form:3.9,xp:4.2,own:.36,xi:.18,cap:0},
+    raya:{n:'Raya',pos:'GK',form:4.3,xp:4.4,own:.50,xi:.48,cap:0},
+    verb:{n:'Verbruggen',pos:'GK',form:3.1,xp:3.4,own:.05,xi:.02,cap:0},
+    semenyo:{n:'Semenyo',pos:'MID',form:6.0,xp:5.1,own:.38,xi:.36,cap:.01},
+    wood:{n:'Wood',pos:'FWD',form:5.8,xp:4.6,own:.24,xi:.21,cap:0},
+    gordon:{n:'Gordon',pos:'MID',form:3.4,xp:4.0,own:.10,xi:.07,cap:0},
+    foden:{n:'Foden',pos:'MID',form:3.0,xp:4.5,own:.22,xi:.14,cap:.01},
+    watkins:{n:'Watkins',pos:'FWD',form:3.6,xp:4.8,own:.20,xi:.12,cap:0},
+    rice:{n:'Rice',pos:'MID',form:4.7,xp:4.9,own:.45,xi:.43,cap:0},
+    cunha:{n:'Cunha',pos:'MID',form:5.1,xp:4.9,own:.40,xi:.37,cap:.01},
+    gyok:{n:'Gyökeres',pos:'FWD',form:4.0,xp:5.2,own:.18,xi:.15,cap:.01},
+    jpedro:{n:'João Pedro',pos:'FWD',form:5.6,xp:5.0,own:.31,xi:.28,cap:0},
+    pickford:{n:'Pickford',pos:'GK',form:3.9,xp:3.9,own:.15,xi:.14,cap:0},
+  };
+  // The Member's Squad as of the last deadline.
+  const SQUAD = {
+    xi:['raya','gabriel','trent','porro','munoz','salah','palmer','semenyo','gordon','haaland','wood'],
+    bench:['verb','vvd','foden','watkins'], captain:'salah', vice:'haaland',
+  };
+  // Seeded rivals, built from Elite-ish ownership with noise so they look real.
+  function rng(seed){ let s=seed; return ()=> (s=(s*1664525+1013904223)>>>0)/4294967296; }
+  const QUOTA={GK:1,DEF:4,MID:4,FWD:2};
+  function makeManager(id,name,seed,bias){
+    const r=rng(seed), xi=[]; const cnt={GK:0,DEF:0,MID:0,FWD:0};
+    const ids=Object.keys(F).sort((a,b)=>(F[b].xi+r()*bias)-(F[a].xi+r()*bias));
+    for(const k of ids){ const p=F[k].pos; if(cnt[p]<QUOTA[p]){cnt[p]++;xi.push(k);} }
+    const cands=xi.filter(k=>F[k].cap>=.01).sort((a,b)=>(F[b].cap+r()*.4)-(F[a].cap+r()*.4));
+    return {id,name,xi,captain:cands[0]};
+  }
+  const M = (id,name,seed,bias,pts,rank,mv)=>Object.assign(makeManager(id,name,seed,bias),{pts,rank,mv});
+  const LEAGUES = {
+    office:{name:'Office League',size:8,managers:[
+      M('o1','Dave K',11,.5,812,1,0), M('o2','Priya S',23,.4,806,2,+1), M('o3','Tomo',37,.9,799,3,-1),
+      {id:'me',name:'You',rank:4,pts:791,mv:+2,xi:SQUAD.xi,captain:SQUAD.captain,me:true},
+      M('o5','Jelena',49,.3,788,5,-1), M('o6','Marko B',51,.8,775,6,0), M('o7','Sam',63,.6,760,7,-2), M('o8','Rui',77,1.1,742,8,+1)]},
+    uni:{name:'Uni Mates',size:5,managers:[
+      M('u1','Aleks',91,.5,830,1,0),{id:'me',name:'You',rank:2,pts:791,mv:+1,xi:SQUAD.xi,captain:SQUAD.captain,me:true},
+      M('u3','Nina',92,.7,780,3,-1), M('u4','Gaz',93,.9,771,4,0), M('u5','Ivo',94,1.0,730,5,0)]},
+  };
+  const H2H = M('h1','Opponent (H2H)',123,.6,0,0,0);
+  const GHOST = {name:'Ghost Squad · Core',xi:['raya','gabriel','saliba','porro','munoz','salah','palmer','saka','mbeumo','haaland','isak'],captain:'haaland',pts:803,rank:null};
+
+  // --- elite figures by freshness -------------------------------------------
+  function eliteFigures(cohort, fresh){
+    // fresh: 'full' (this GW) | 'partial' (this GW, bigger error) | 'stale' (previous GW) | 'none'
+    if(fresh==='none') return null;
+    const stale = fresh==='stale';
+    const moe = cohort==='10k' ? (fresh==='partial'?.028:.02) : (fresh==='partial'?.028:.02);
+    const out={};
+    for(const [k,f] of Object.entries(F)){
+      const j = stale ? ((k.length%5)-2)*.012 : 0;               // stale = last GW's numbers, slightly different
+      const adj = cohort==='10k' ? 1 : .9;                       // 100k is a bit more spread out
+      const base = cohort==='10k'?0:.05;
+      out[k]={xi:clamp(f.xi*adj+base*(f.xi>.1?1:0)+j), cap:clamp(f.cap*(cohort==='10k'?1:.75))};
+    }
+    return {byId:out, moe, cohort, gw: stale?11:12, sample: fresh==='partial'? (cohort==='10k'?980:1130) : (cohort==='10k'?1940:2350), fresh};
+  }
+  const clamp=x=>Math.max(0,Math.min(1,x));
+
+  // --- weight: what a point of difference is worth ----------------------------
+  // Phase 1: form (avg pts/GW over last 4 finished GWs). Phase 2: xP for next GW.
+  const weight=(k,phase)=> phase===2 ? F[k].xp : F[k].form;
+
+  // --- reference group -> per-footballer share ------------------------------
+  function refFromManagers(list){
+    const n=list.length, xi={}, cap={};
+    for(const m of list){ m.xi.forEach(k=>xi[k]=(xi[k]||0)+1/n); cap[m.captain]=(cap[m.captain]||0)+1/n; }
+    return {xi,cap,n};
+  }
+
+  // --- the gap itself --------------------------------------------------------
+  // edge(k) = [(you start)-(ref starts)]*w  +  [(you captain)-(ref captains)]*w     (pts per GW vs the reference average)
+  function computeGap({ref, moe, phase, captainOnly}){
+    const rows=[];
+    for(const k of Object.keys(F)){
+      const youXi = SQUAD.xi.includes(k)?1:0, youCap = SQUAD.captain===k?1:0;
+      const rXi = ref.xi[k]||0, rCap = ref.cap[k]||0, w=weight(k,phase);
+      const dXi=youXi-rXi, dCap=youCap-rCap;
+      const edge = captainOnly ? dCap*w : (dXi+dCap)*w;
+      const sig = captainOnly ? Math.abs(dCap) : Math.abs(dXi);
+      const noise = Math.max(2*moe, 0);                         // ignore differences inside the margin of error
+      rows.push({k,name:F[k].n,youXi,rXi,youCap,rCap,w,edge,dXi,dCap,significant: sig>noise && Math.abs(edge)>=.35});
+    }
+    const sig=rows.filter(r=>r.significant);
+    const youHave = sig.filter(r=>r.edge>0).sort((a,b)=>b.edge-a.edge).slice(0,3);
+    const youLack = sig.filter(r=>r.edge<0).sort((a,b)=>a.edge-b.edge).slice(0,3);
+    const net = rows.reduce((s,r)=>s+(captainOnly? r.dCap*r.w : (r.dXi+r.dCap)*r.w),0);
+    return {rows,youHave,youLack,net};
+  }
+
+  const pct=x=>Math.round(x*100)+'%';
+  const sg=x=>(x>=0?'+':'−')+Math.abs(x).toFixed(1);
+
+  // --- formatting (pure text) --------------------------------------------------
+  function header(ctx){
+    const {clock, phase}=ctx;
+    const asOf = clock==='before' ? 'Squad as of the GW12 deadline. GW13 picks are hidden until its deadline.' : 'GW12 deadline has passed: Squads are locked.';
+    return asOf;
+  }
+  function eliteMessage(ctx){
+    const {cohort,fresh,phase,captainOnly,clock}=ctx;
+    const el=eliteFigures(cohort,fresh);
+    if(!el) return {text:`Elite gap · top ${cohort}\nNo Elite figures yet for GW12: the deadline job is still reading standings.\nTry /rivals meanwhile.`,explain:null};
+    const ref={xi:{},cap:{}}; for(const [k,v] of Object.entries(el.byId)){ref.xi[k]=v.xi;ref.cap[k]=v.cap;}
+    const g=computeGap({ref,moe:el.moe,phase,captainOnly});
+    const unit = phase===2?'xP':'form';
+    let t=`Elite gap · top ${cohort} · ${captainOnly?'captain':'starting XI'}\n`;
+    t+= el.fresh==='stale' ? `⚠ Using GW${el.gw} figures (GW12 sample not finished). Labelled, not mixed.\n`
+      : `GW${el.gw} · sample ${el.sample.toLocaleString()} · ±${(el.moe*100).toFixed(1)}%${el.fresh==='partial'?' (partial sample)':''}\n`;
+    t+= header(ctx)+'\n\n';
+    t+= `Edge = points per GW you gain (+) or give up (−) against the average ${'top '+cohort} manager, weighted by ${unit}.\n\n`;
+    t+= block('You back, they mostly don\'t', g.youHave, captainOnly, 'have');
+    t+= block('They back, you don\'t', g.youLack, captainOnly, 'lack');
+    if(!g.youHave.length && !g.youLack.length) t+='\nNo difference larger than the margin of error: you look like the template.';
+    return {text:t,explain:{g,el,ref,phase}};
+  }
+  function block(title,rows,captainOnly,side){
+    if(!rows.length) return '';
+    let s=title+'\n';
+    for(const r of rows){
+      if(captainOnly) s+=`  ${r.name}: you ${r.youCap?'captain him':'don\'t'} · they ${pct(r.rCap)} · ${sg(r.edge)}\n`;
+      else {
+        const cap = (r.youCap||r.rCap>=.05)? ` · captain you ${r.youCap?'yes':'no'} / they ${pct(r.rCap)}` : '';
+        s+=`  ${r.name}: you ${r.youXi?'start':'don\'t'} · they ${pct(r.rXi)}${cap} · ${sg(r.edge)}\n`;
+      }
+    }
+    return s+'\n';
+  }
+
+  // Rivals: nearest ±2 by rank, or all. Goal league decides which league.
+  function rivalMessage(ctx){
+    const {goal,phase,rivalsAll,clock,h2hOn}=ctx;
+    let lgKey = goal==='overall' ? ctx.followed : goal;           // Overall-rank members pick via followed league
+    if(lgKey==='h2h'){
+      const ref=refFromManagers([H2H]); const g=computeGap({ref,moe:0,phase,captainOnly:false});
+      return {text:`Rival gap · your H2H opponent this GW\n${header(ctx)}\n\n`+block('You back, they don\'t',g.youHave,false)+block('They back, you don\'t',g.youLack,false)+`\nWith one opponent every difference is a coin you hold. Captain: you ${F[SQUAD.captain].n}, they ${F[H2H.captain].n}.`,explain:{g,ref,phase,rivals:[H2H]}};
+    }
+    const lg=LEAGUES[lgKey]; const idx=lg.managers.findIndex(m=>m.me);
+    const others=lg.managers.filter(m=>!m.me);
+    const chosen = rivalsAll ? others : others.filter(m=>Math.abs(m.rank-lg.managers[idx].rank)<=2);
+    const ref=refFromManagers(chosen); const g=computeGap({ref,moe:0,phase,captainOnly:false});
+    let t=`Rival gap · ${lg.name} · ${rivalsAll?'all '+chosen.length+' Rivals':'nearest '+chosen.length+' by rank'}\n${header(ctx)}\n`;
+    if(clock==='before') t+='Rival picks are also as of the last deadline.\n';
+    t+='\n'+block('You back, they mostly don\'t',g.youHave,false)+block('They back, you don\'t',g.youLack,false);
+    t+='\n';
+    const same=chosen.filter(m=>m.captain===SQUAD.captain).length;
+    t+=`Captain: ${F[SQUAD.captain].n} · ${same} of ${chosen.length} Rivals captain him too.`;
+    if(!g.youHave.length&&!g.youLack.length) t+='\nNo single Footballer stands out against these Rivals.';
+    return {text:t,explain:{g,ref,phase,rivals:chosen}};
+  }
+
+  function leagueMessage(ctx){
+    const {goal,followed,ghost}=ctx;
+    const lgKey = goal==='overall'||goal==='h2h' ? followed : goal;
+    const lg=LEAGUES[lgKey]; const rows=[...lg.managers].map(m=>({...m}));
+    if(ghost) rows.push({name:GHOST.name,pts:GHOST.pts,rank:null,mv:null,ghost:true});
+    rows.sort((a,b)=>b.pts-a.pts);
+    let t=`${lg.name} · after GW12\n`;
+    const me=lg.managers.find(m=>m.me);
+    let i=1; const out=[];
+    for(const r of rows){
+      const arrow = r.mv==null?' ':(r.mv>0?'▲':r.mv<0?'▼':'–');
+      const pos = r.ghost?'👻':String(i++).padStart(2);
+      out.push(`${pos} ${arrow}${r.mv?Math.abs(r.mv):' '} ${r.name.padEnd(20)} ${r.pts}`+(r.me?'  ← you':''));
+    }
+    t+=out.join('\n')+'\n\n';
+    const above=lg.managers.find(m=>m.rank===me.rank-1), below=lg.managers.find(m=>m.rank===me.rank+1);
+    if(above) t+=`${above.pts-me.pts} pts behind ${above.name}\n`;
+    if(below) t+=`${me.pts-below.pts} pts ahead of ${below.name}\n`;
+    t+=`Leader ${lg.managers[0].pts-me.pts>0?lg.managers[0].pts-me.pts+' pts clear of you':'is you'}`;
+    if(ghost) t+=`\n👻 ${GHOST.name} is ${GHOST.pts>me.pts?GHOST.pts-me.pts+' pts ahead':me.pts-GHOST.pts+' pts behind'} of you (shown only as a row; no commentary).`;
+    return {text:t,explain:null};
+  }
+
+  function answer(cmd,ctx){
+    if(cmd==='/gap') return eliteMessage({...ctx,captainOnly:false});
+    if(cmd==='/gap captain') return eliteMessage({...ctx,captainOnly:true});
+    if(cmd==='/rivals') return rivalMessage({...ctx,rivalsAll:false});
+    if(cmd==='/rivals all') return rivalMessage({...ctx,rivalsAll:true});
+    if(cmd==='/league') return leagueMessage(ctx);
+    return {text:'Unknown command.',explain:null};
+  }
+  return {answer,F,SQUAD,LEAGUES};
+})();
+
+/* ============================ THIN PAGE SHELL ============================ */
+const DEFAULT={phase:1,clock:'after',fresh:'full',cohort:'10k',goal:'overall',followed:'office',ghost:false};
+let ctx={...DEFAULT};
+const $=id=>document.getElementById(id);
+
+const OPTS=[
+ ['phase','Weight',[[1,'Phase 1: recent form'],[2,'Phase 2: xP']]],
+ ['clock','Clock',[['after','After GW12 deadline'],['before','Before GW13 deadline']]],
+ ['fresh','Elite figures',[['full','Full sample'],['partial','Partial sample'],['stale','Last GW (stale)'],['none','Not ready']]],
+ ['cohort','Cohort',[['10k','Top 10k'],['100k','Top 100k']]],
+ ['goal','Goal',[['overall','Overall rank'],['office','Mini-league: Office'],['uni','Mini-league: Uni'],['h2h','H2H opponent']]],
+ ['followed','Followed league',[['office','Office League'],['uni','Uni Mates']]],
+ ['ghost','Ghost Squad',[[false,'Hidden'],[true,'Core as a Rival row']]],
+];
+function renderControls(){
+  $('controls').innerHTML=OPTS.map(([key,label,vals])=>
+    `<div class="ctl"><b>${label}</b>`+vals.map(([v,l])=>`<button class="${ctx[key]===v?'on':''}" onclick="setCtx('${key}',${JSON.stringify(v).replace(/"/g,'&quot;')})">${l}</button>`).join('')+'</div>').join('')
+   +`<div class="muted" style="margin-top:6px">"Followed league" is the league /rivals and /league use when the Goal is Overall rank.</div>`;
+}
+function setCtx(k,v){ ctx[k]=v; renderControls(); }
+function msg(cls,text){ const d=document.createElement('div'); d.className='msg '+cls; d.textContent=text; $('chat').appendChild(d); $('chat').scrollTop=1e9; }
+function send(cmd){
+  msg('user',cmd); const r=GAP.answer(cmd,ctx); msg('bot',r.text); renderExplain(r.explain);
+}
+function clearChat(){ $('chat').innerHTML=''; }
+function renderExplain(e){
+  if(!e){ $('explain').innerHTML='<span class="muted">Nothing to compute for this answer.</span>'; return; }
+  const rows=e.g.rows.filter(r=>r.rXi>0||r.youXi).sort((a,b)=>Math.abs(b.edge)-Math.abs(a.edge)).slice(0,12);
+  $('explain').innerHTML='<div class="muted" style="margin-bottom:6px">Top 12 by |edge|. Shown in Telegram only if the difference beats 2× the margin of error and |edge| ≥ 0.35.</div><table><tr><th>Footballer</th><th>You XI</th><th>Ref XI</th><th>You cap</th><th>Ref cap</th><th>Weight</th><th>Edge</th><th>Shown?</th></tr>'+
+   rows.map(r=>`<tr><td>${r.name}</td><td>${r.youXi?'yes':'–'}</td><td>${Math.round(r.rXi*100)}%</td><td>${r.youCap?'yes':'–'}</td><td>${Math.round(r.rCap*100)}%</td><td>${r.w.toFixed(1)}</td><td>${r.edge>=0?'+':'−'}${Math.abs(r.edge).toFixed(2)}</td><td>${r.significant?'✔':''}</td></tr>`).join('')+'</table>';
+}
+
+/* Walkthroughs: each step sets the world and/or sends a command. */
+const SCEN=[
+ {t:'Normal post-deadline',d:'Fresh full-sample figures, Overall rank Goal. What does a Member actually read? Watch the edge numbers, the margin of error line and whether the list feels actionable.',
+  steps:[['Reset world',()=>{ctx={...DEFAULT};}],['/gap',()=>send('/gap')],['/gap captain',()=>send('/gap captain')],['Switch cohort to top 100k',()=>setCtx('cohort','100k')],['/gap',()=>send('/gap')]]},
+ {t:'Partial & stale figures',d:'The deadline job did not finish. See how partial, previous-GW and none are labelled, and that we never mix them.',
+  steps:[['Reset world',()=>{ctx={...DEFAULT};}],['Partial sample',()=>setCtx('fresh','partial')],['/gap',()=>send('/gap')],['Last GW (stale)',()=>setCtx('fresh','stale')],['/gap',()=>send('/gap')],['Not ready',()=>setCtx('fresh','none')],['/gap',()=>send('/gap')]]},
+ {t:'Between deadlines',d:'Mid-week the Member has already made GW13 transfers in FPL, but we cannot see them. What do we say, and is it misleading?',
+  steps:[['Reset world',()=>{ctx={...DEFAULT,clock:'before'};}],['/gap',()=>send('/gap')],['/rivals',()=>send('/rivals')],['/league',()=>send('/league')]]},
+ {t:'Rival gap in a Mini-league',d:'Goal is the Office League. Nearest-by-rank versus all Rivals can tell different stories. Then the Uni Mates league (5 managers).',
+  steps:[['Reset world',()=>{ctx={...DEFAULT,goal:'office'};renderControls();}],['/rivals (nearest ±2)',()=>send('/rivals')],['/rivals all',()=>send('/rivals all')],['Goal = Uni Mates',()=>setCtx('goal','uni')],['/rivals',()=>send('/rivals')]]},
+ {t:'Head-to-head',d:'The special case: one opponent. Every difference is a certainty, not a share.',
+  steps:[['Reset world',()=>{ctx={...DEFAULT,goal:'h2h'};}],['/rivals',()=>send('/rivals')]]},
+ {t:'Phase 1 → Phase 2',d:'Same Squad, same reference group. Switching the weight from recent form to xP changes who looks like a differential worth caring about (compare Semenyo and Wood against Foden and Watkins).',
+  steps:[['Reset world',()=>{ctx={...DEFAULT};}],['/gap with form',()=>send('/gap')],['Switch weight to xP',()=>setCtx('phase',2)],['/gap with xP',()=>send('/gap')]]},
+ {t:'League view + Ghost Squad',d:'The progress table: rank movement, gaps to the Rivals directly above and below. Then the Core Ghost Squad appears as one more row (Phase 4).',
+  steps:[['Reset world',()=>{ctx={...DEFAULT};}],['/league',()=>send('/league')],['Show Ghost Squad row',()=>setCtx('ghost',true)],['/league',()=>send('/league')],['Goal = Uni Mates',()=>setCtx('goal','uni')],['/league',()=>send('/league')]]},
+];
+let cur=0, step=0;
+function renderTabs(){
+  $('tabs').innerHTML=SCEN.map((s,i)=>`<button class="${i===cur?'on':''}" onclick="pick(${i})">${s.t}</button>`).join('');
+  const s=SCEN[cur];
+  $('scenario').innerHTML=`<div class="muted">${s.d}</div><div class="steps">`+s.steps.map(([l],i)=>`<button class="${i<step?'done':''}" onclick="run(${i})">${i+1}. ${l}</button>`).join('')+'</div>';
+}
+function pick(i){ cur=i; step=0; renderTabs(); }
+function run(i){ SCEN[cur].steps[i][1](); step=i+1; renderControls(); renderTabs(); }
+
+renderControls(); renderTabs();
+send('/gap');
+</script>
+</body>
+</html>

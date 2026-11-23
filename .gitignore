@@ -1,0 +1,10 @@
+# OS
+.DS_Store
+
+# Third-party match/player data: never commit (public repo, licensing)
+*.csv
+
+# Local env and secrets
+.env
+.env.*
+!.env.example

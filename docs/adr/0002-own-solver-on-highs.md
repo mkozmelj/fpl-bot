@@ -1,0 +1,3 @@
+# Write our own transfer solver on HiGHS, derived from open-fpl-solver
+
+The multi-Gameweek MIP (transfers, hits, rolling free transfers, XI, captain, bench, Chips) is our own code on `highspy` (HiGHS, MIT). We don't vendor or depend on `solioanalytics/open-fpl-solver`. That project is a single 53 KB script maintained by one person, and we need to reshape it anyway: DataFrame inputs, Mini-league Goal objective terms, and a testable module structure. We port its formulation with Apache-2.0 attribution, because our code is a derivative. The upstream repo, pinned to a commit, is used **only in CI** as a regression oracle ("same inputs, same optimum"). Nothing upstream changes can reach runtime. The only runtime solver dependency is `highspy`, pinned by hash.
