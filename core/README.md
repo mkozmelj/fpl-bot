@@ -14,17 +14,20 @@ core/
     __main__.py                  `python -m fplbot [migrate]`
     app.py                       composition root (FplBotApp): config + swappable edges
     config.py                    environment config
-    clock.py                     Clock protocol + SystemClock
+    clock.py                     Clock protocol (now, sleep) + SystemClock
     logs.py                      logging setup (no identifiers in logs)
-    sources/                     FPL adapter: FplTransport (raw GET), FplSource (fail-soft),
-                                 FakeFplTransport (recorded fixtures)
+    sources/                     FPL adapter: fpl.py (FplSource -> PoliteFplClient ->
+                                 FplTransport), limiter.py (shared 1 req/s, Priority),
+                                 live.py (httpx), fake.py (recorded fixtures)
     store/                       schema.py, migrations/ (Alembic), members.py, seasons.py, db.py
     prediction/ optimisation/    Phase 2/3, empty
     advice/                      pure decisions (Gaps, Rivals, Price alert)
     explain/                     Phase 2, empty
     delivery/                    telegram.py (PTB wiring), conversation.py (text in, replies out),
-                                 texts.py (all wording), rate_limit.py
-    jobs/                        scheduled jobs (ticket 31)
+                                 texts.py (all wording), rate_limit.py,
+                                 owner_alerts.py (deduplicated owner incident DMs)
+    jobs/                        runner.py (JobRunner: runs a job, reports outcome to the
+                                 owner); scheduled jobs arrive with ticket 31
   tests/
     harness.py                   THE test seam (see below)
     conftest.py                  throwaway database + `bot` fixture
@@ -47,8 +50,9 @@ uv run python -m fplbot migrate     # alembic upgrade head
 uv run python -m fplbot             # long-poll Telegram; Ctrl-C to stop
 ```
 
-Optional: `FPL_FIXTURES_DIR` points the fake source at another fixture directory. The live FPL
-source arrives with ticket 27; until then `FPL_SOURCE=fake` is required.
+Optional: `FPL_FIXTURES_DIR` points the fake source at another fixture directory.
+`FPL_SOURCE=live` (the default) calls the real FPL API through the polite client: at most 1
+request a second, a generic browser User-Agent, backoff on 429/5xx, never a retry on 403.
 
 ## Tests, lint, types
 
@@ -73,7 +77,7 @@ python-telegram-bot `Application`, real Postgres) with three fakes swapped in at
 |---|---|---|
 | `FakeClock` | `SystemClock` | `await bot.advance(timedelta(hours=49))` |
 | `FakeTelegram` | PTB's HTTP request layer | `chat.replies`, `chat.last_reply`, `bot.telegram.calls` |
-| `FakeFplTransport` | the live FPL HTTP transport | `bot.fpl.respond(path, FplResponse(403))`, `bot.fpl.requested_paths` |
+| `FakeFplTransport` | the live FPL HTTP transport | `bot.fpl.respond(path, FplResponse(403))`, `bot.fpl.requested_paths`, `bot.fpl.requests` (time, path, headers) |
 
 ```python
 async def test_example(bot: BotHarness) -> None:
@@ -90,6 +94,16 @@ Helpers: `bot.owner`, `bot.private_chat(user_id)`, `bot.group_chat(chat_id, user
 stored?" checks). Assert only on what chats receive, log lines and externally meaningful rows.
 Never on module calls, SQL or internal state.
 
+Jobs and time: `bot.run_job(name, job, priority)` runs a job through the bot's `JobRunner`
+(outcome reported to the owner as in production) and returns `True` on success;
+`bot.start_job(...)` starts one in the background. A job is `async def job(fpl: FplSource)`.
+
+All waiting in the bot goes through `Clock.sleep` (rate limit, backoff, scheduled waits), so it
+runs in simulated time: `bot.advance(delta)` wakes every sleeper due within `delta` in order, and
+`chat.send` / `bot.run_job` move time on by themselves whenever the work they wait for is asleep.
+Never wait on a bare `asyncio.Event` or `asyncio.sleep` for time-based behaviour: the harness
+cannot see it and reports "the bot did not settle".
+
 Extending the harness: button presses (callback queries) and scheduled-job ticks belong in
 `BotHarness` (`deliver_text` shows the update shape; `advance` is where due jobs should run once
 the scheduler exists). `FakeTelegram._result` answers Bot API methods; add a case when the bot
@@ -102,6 +116,11 @@ starts calling a new method whose result it reads.
 path without a file answers 404. Script awkward answers per test with
 `bot.fpl.respond("bootstrap-static/", FplResponse(503, b'"The game is being updated."'))`;
 several responses are served in order and the last one repeats.
+
+Recorded awkward answers live in `tests/fixtures/fpl-responses/` (status, headers, body):
+`canned_fpl_response("503-updating" | "403-forbidden" | "429-retry-after" | "502-bad-gateway" |
+"bootstrap-static-missing-fields")`. `fpl_fixture("bootstrap-static/")` gives the normal 200
+answer for a path, to script "fails, then recovers".
 
 Fixtures are small and synthetic (made-up clubs and Footballers). Never commit real FPL data.
 
