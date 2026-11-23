@@ -34,7 +34,7 @@ from fplbot.delivery import texts
 from fplbot.delivery.messages import Button, Reply
 from fplbot.delivery.timezones import BUTTON_ZONES, resolve_timezone
 from fplbot.sources.footballer_search import Footballer, footballers_in, search
-from fplbot.sources.fpl import FplEntry, FplLeague, FplSource, Lookup
+from fplbot.sources.fpl import FplEntry, FplError, FplLeague, FplSource, Lookup
 from fplbot.store.members import Goal, GoalLeague, MemberRecord, MemberStore
 from fplbot.store.watch_list import Added, WatchListStore
 
@@ -475,11 +475,10 @@ class MemberFlow:
     async def _footballers(self) -> dict[int, Footballer] | None:
         """This season's Footballers by id, from ``bootstrap-static``; ``None`` if FPL can't be
         reached or answers something unusable."""
-        bootstrap = await self._fpl.bootstrap_static()
-        if bootstrap is None:
-            return None
         try:
-            return footballers_in(bootstrap)
+            return footballers_in(await self._fpl.bootstrap_static())
+        except FplError:
+            return None
         except KeyError, TypeError, ValueError:
             log.warning("bootstrap-static has an unexpected shape")
             return None

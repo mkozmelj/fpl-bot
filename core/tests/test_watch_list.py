@@ -5,6 +5,7 @@ synthetic Footballers: "Aurelio" matches two of them, as "Gabriel" does in the p
 """
 
 import json
+from datetime import timedelta
 from typing import Any
 
 from fplbot.sources.fpl import FplResponse
@@ -209,6 +210,7 @@ async def test_too_many_matches_ask_for_more_of_the_name(bot: BotHarness) -> Non
 async def test_fpl_being_unreachable_is_explained(bot: BotHarness) -> None:
     alice = await member(bot)
     await alice.send("/watch add varenne")
+    await bot.advance(timedelta(minutes=16))  # past the 15 minutes bootstrap-static is kept
     bot.fpl.respond("bootstrap-static/", FplResponse(503, b"The game is being updated."))
 
     await alice.send("/watch add thorsby")
