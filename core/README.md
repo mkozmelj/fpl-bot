@@ -131,6 +131,14 @@ Recorded awkward answers live in `tests/fixtures/fpl-responses/` (status, header
 "bootstrap-static-missing-fields")`. `fpl_fixture("bootstrap-static/")` gives the normal 200
 answer for a path, to script "fails, then recovers".
 
+The default fixtures match the harness clock (Thu 19 Nov 2026): `bootstrap-static.json` has
+GW1-12 with GW10 the last deadline and GW11 the next (Sat 21 Nov 11:00 UTC), and `fixtures.json`
+a few fixtures. Team 1001 has `history.json` (GW9-10) and picks for GW9 and GW10; team 1002 has
+history for GW10 but no picks (FPL's 404, "hidden"); team 1003 has no history.
+
+Linking a team starts the join backfill as a background job at routine priority, so a test that
+needs the Member's Squad lets time pass first (`await bot.advance(timedelta(minutes=1))`).
+
 Fixtures are small and synthetic (made-up clubs and Footballers). Never commit real FPL data.
 
 ## Migrations

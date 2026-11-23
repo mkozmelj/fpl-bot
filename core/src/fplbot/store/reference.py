@@ -4,6 +4,9 @@
 ``fixtures/``, and writes only rows that changed, so a refresh with nothing new costs Neon no
 writes. Raw FPL responses are never stored.
 
+Interactive commands read what is stored and only fetch when nothing is stored for the season
+yet (``ensure_loaded``); scheduled refreshes (ticket 31) and the join backfill keep it current.
+
 Gameweek timing is derived from stored deadlines and the clock, not from FPL's
 ``is_current``/``is_next`` flags (which lag while FPL updates): see ``deadlines``.
 """
@@ -25,9 +28,6 @@ from fplbot.store.schema import Club, Fixture, Footballer, Gameweek
 from fplbot.store.seasons import season_of
 
 log = logging.getLogger(__name__)
-
-# Interactive commands refresh reference data on demand when it is older than this.
-STALE_AFTER = BOOTSTRAP_MAX_AGE
 
 
 @dataclass(frozen=True)
@@ -52,8 +52,6 @@ class ReferenceStore:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._clock = clock
         self._lock = asyncio.Lock()
-        # When this process last refreshed successfully (memory only: a restart refreshes again).
-        self._refreshed_at: datetime | None = None
 
     async def refresh(self, fpl: FplSource, max_age: timedelta = BOOTSTRAP_MAX_AGE) -> None:
         """Fetch ``bootstrap-static`` (unless the in-memory copy is younger than ``max_age``;
@@ -70,20 +68,19 @@ class ReferenceStore:
                 )
                 await _upsert(session, Gameweek, season, (asdict(g) for g in reference.gameweeks))
                 await _upsert(session, Fixture, season, (asdict(f) for f in fixtures))
-            self._refreshed_at = self._clock.now()
 
-    async def refresh_if_stale(self, fpl: FplSource) -> bool:
-        """For interactive commands: refresh when this process has not done so in the last
-        ``STALE_AFTER``. Fail-soft: ``False`` if FPL failed (what is stored stays usable)."""
-        now = self._clock.now()
-        if self._refreshed_at is not None and now - self._refreshed_at < STALE_AFTER:
-            return True
+    async def ensure_loaded(self, fpl: FplSource) -> None:
+        """For interactive commands: fetch reference data only if none is stored for this
+        season. Fail-soft: if FPL fails, callers see what is (not) stored."""
+        season = season_of(self._clock.now())
+        async with self._sessions() as session:
+            stored = await session.scalar(select(Gameweek.id).where(Gameweek.season == season))
+        if stored is not None:
+            return
         try:
             await self.refresh(fpl)
         except FplError as error:
             log.info("reference data refresh failed: %s", error.code)
-            return False
-        return True
 
     async def deadlines(self, now: datetime) -> Deadlines:
         """The last passed and the next deadline of ``now``'s season."""

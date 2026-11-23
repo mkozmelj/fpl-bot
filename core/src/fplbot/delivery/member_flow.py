@@ -364,7 +364,7 @@ class MemberFlow:
         turn.say(f"{_summary(turn.member)}\n{texts.settings_watch_list(names, len(watched))}")
 
     async def _squad(self, turn: Turn, argument: str) -> None:
-        await self._reference.refresh_if_stale(self._fpl)  # fail-soft: else use what's stored
+        await self._reference.ensure_loaded(self._fpl)
         now = self._clock.now()
         deadlines = await self._reference.deadlines(now)
         last = deadlines.last
