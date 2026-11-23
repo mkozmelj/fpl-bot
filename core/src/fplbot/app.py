@@ -45,7 +45,12 @@ class FplBotApp:
         self.telegram = builder.build()
         telegram.install(
             self.telegram,
-            Conversation(owner_id=config.owner_telegram_id, members=self.members, clock=self.clock),
+            Conversation(
+                owner_id=config.owner_telegram_id,
+                members=self.members,
+                fpl=self.fpl,
+                clock=self.clock,
+            ),
         )
 
     async def __aenter__(self) -> Self:
@@ -67,7 +72,7 @@ class FplBotApp:
         updater = self.telegram.updater
         if updater is None:
             raise RuntimeError("the Telegram application was built without an updater")
-        await updater.start_polling(allowed_updates=[Update.MESSAGE])
+        await updater.start_polling(allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY])
         log.info("polling")
         try:
             await stop.wait()

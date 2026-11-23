@@ -90,9 +90,15 @@ Helpers: `bot.owner`, `bot.private_chat(user_id)`, `bot.group_chat(chat_id, user
 stored?" checks). Assert only on what chats receive, log lines and externally meaningful rows.
 Never on module calls, SQL or internal state.
 
-Extending the harness: button presses (callback queries) and scheduled-job ticks belong in
-`BotHarness` (`deliver_text` shows the update shape; `advance` is where due jobs should run once
-the scheduler exists). `FakeTelegram._result` answers Bot API methods; add a case when the bot
+Buttons: `chat.last_message.buttons` (labels), `await chat.press(label)` (taps it on the latest
+message offering it; `on=message` taps an older, stale keyboard). Shortcuts:
+`await bot.invited_friend(user_id)` (redeemed, setup not started) and
+`await bot.active_member(user_id, team_id, timezone)` (set up through the real flow; the team
+needs a fixture under `fixtures/fpl/entry/`). `await bot.restart()` starts a fresh process on
+the same database and fakes, to test what survives in memory.
+
+Extending the harness: scheduled-job ticks belong in `BotHarness` (`advance` is where due jobs
+should run once the scheduler exists). `FakeTelegram._result` answers Bot API methods; add a case when the bot
 starts calling a new method whose result it reads.
 
 ## FPL fixtures

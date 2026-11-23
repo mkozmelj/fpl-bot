@@ -1,0 +1,17 @@
+{
+  "id": 1002,
+  "name": "Bojan United",
+  "player_first_name": "Bojan",
+  "player_last_name": "Marlow",
+  "player_region_name": "Nowhereland",
+  "summary_overall_points": 478,
+  "summary_overall_rank": 412889,
+  "leagues": {
+    "classic": [
+      {"id": 314, "name": "Overall", "short_name": "overall", "league_type": "s", "scoring": "c", "entry_rank": 412889},
+      {"id": 501, "name": "Office League", "short_name": null, "league_type": "x", "scoring": "c", "entry_rank": 5}
+    ],
+    "h2h": [],
+    "cup": {"matches": [], "status": {"qualification_event": null}}
+  }
+}

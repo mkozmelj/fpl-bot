@@ -1,17 +1,23 @@
-"""What the bot says back to a private chat. Telegram-agnostic: text in, replies out.
+"""What the bot says back to a private chat. Telegram-agnostic: text and button presses in,
+replies out.
 
-``telegram.py`` adapts python-telegram-bot updates to ``Conversation.respond``; group chats never
-reach this module. Strangers get silence: an empty reply list.
+``telegram.py`` adapts python-telegram-bot updates to ``Conversation.respond`` and
+``Conversation.press``; group chats never reach this module. Strangers get silence: an empty
+reply list. Members are handed to ``MemberFlow`` (setup, settings, ``/leave``).
 """
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from fplbot.clock import Clock
 from fplbot.delivery import texts
+from fplbot.delivery.member_flow import MemberFlow
+from fplbot.delivery.messages import Button, Incoming, Press, Reply
 from fplbot.delivery.rate_limit import AttemptLimiter
+from fplbot.sources.fpl import FplSource
 from fplbot.store.members import Joined, MemberStore, Refusal
+
+__all__ = ["Button", "Conversation", "Incoming", "Press", "Reply"]
 
 log = logging.getLogger(__name__)
 
@@ -22,26 +28,15 @@ WRONG_CODES_ALLOWED = 5
 WRONG_CODE_WINDOW = timedelta(hours=1)
 
 
-@dataclass(frozen=True)
-class Reply:
-    text: str
-
-
-@dataclass(frozen=True)
-class Incoming:
-    """A text message in a private chat (where the chat ID equals the sender's user ID)."""
-
-    chat_id: int
-    user_id: int
-    text: str
-
-
 class Conversation:
-    def __init__(self, *, owner_id: int, members: MemberStore, clock: Clock) -> None:
+    def __init__(
+        self, *, owner_id: int, members: MemberStore, fpl: FplSource, clock: Clock
+    ) -> None:
         self._owner_id = owner_id
         self._members = members
         self._clock = clock
         self._wrong_codes = AttemptLimiter(WRONG_CODES_ALLOWED, WRONG_CODE_WINDOW)
+        self._member_flow = MemberFlow(members=members, fpl=fpl, clock=clock)
 
     async def respond(self, message: Incoming, bot_username: str) -> list[Reply]:
         command, argument = _parse_command(message.text)
@@ -53,13 +48,19 @@ class Conversation:
             hours = int(INVITE_VALID_FOR.total_seconds() // 3600)
             return [Reply(texts.invite_link(bot_username, code, hours))]
 
-        if await self._members.member_number(message.chat_id) is not None:
-            # Setup, settings and the Member commands arrive with ticket 28.
-            return [Reply(texts.WELCOME_BACK)] if command == "/start" else []
+        member = await self._members.get(message.chat_id)
+        if member is not None:
+            return await self._member_flow.on_text(member, command, argument)
 
         if command == "/start" and argument:
             return await self._redeem(argument, message.chat_id, now)
         return []
+
+    async def press(self, press: Press) -> list[Reply]:
+        member = await self._members.get(press.chat_id)
+        if member is None:
+            return []
+        return await self._member_flow.on_press(member, press.data)
 
     async def _redeem(self, code: str, chat_id: int, now: datetime) -> list[Reply]:
         if self._wrong_codes.is_locked(chat_id, now):
@@ -68,7 +69,9 @@ class Conversation:
         outcome = await self._members.redeem_invite(code, chat_id, now, member_cap=MEMBER_CAP)
         if isinstance(outcome, Joined):
             log.info("member %d joined", outcome.member_number)
-            return [Reply(texts.GREETING)]
+            member = await self._members.get(chat_id)
+            setup = await self._member_flow.begin(member) if member else []
+            return [Reply(texts.GREETING), *setup]
         log.info("invite refused: %s", outcome.value)
         if outcome is not Refusal.FULL:
             self._wrong_codes.record_failure(chat_id, now)

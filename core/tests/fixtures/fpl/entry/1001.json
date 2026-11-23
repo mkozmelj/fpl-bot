@@ -1,0 +1,20 @@
+{
+  "id": 1001,
+  "name": "Alex's Aces",
+  "player_first_name": "Alex",
+  "player_last_name": "Kestrel",
+  "player_region_name": "Nowhereland",
+  "summary_overall_points": 512,
+  "summary_overall_rank": 84213,
+  "leagues": {
+    "classic": [
+      {"id": 314, "name": "Overall", "short_name": "overall", "league_type": "s", "scoring": "c", "entry_rank": 84213},
+      {"id": 501, "name": "Office League", "short_name": null, "league_type": "x", "scoring": "c", "entry_rank": 3},
+      {"id": 502, "name": "Sunday Pub XI", "short_name": null, "league_type": "x", "scoring": "c", "entry_rank": 7}
+    ],
+    "h2h": [
+      {"id": 601, "name": "Cup Rivals H2H", "short_name": null, "league_type": "x", "scoring": "h", "entry_rank": 2}
+    ],
+    "cup": {"matches": [], "status": {"qualification_event": null}}
+  }
+}
