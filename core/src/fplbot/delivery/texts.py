@@ -95,6 +95,9 @@ LEFT = "Done. Everything I stored about you is deleted. To rejoin you need a new
 
 # (command, what it does) in /help order. Later tickets add their commands here.
 COMMANDS: list[tuple[str, str]] = [
+    ("/watch", "show your Watch list"),
+    ("/watch add <name>", ""),
+    ("/watch remove <name>", ""),
     ("/goal", "switch Goal"),
     ("/time HH:MM", "Price alert time"),
     ("/tz", "change timezone"),
@@ -104,7 +107,7 @@ COMMANDS: list[tuple[str, str]] = [
 
 
 def help_text() -> str:
-    return "\n".join(f"{command}  {what}" for command, what in COMMANDS)
+    return "\n".join(f"{command}  {what}".rstrip() for command, what in COMMANDS)
 
 
 def unknown_team(team_id: str) -> str:
@@ -165,3 +168,63 @@ def alert_time_clamped(alert_time: str, timezone: str, send_uk: str, send_local:
         "Price alerts only go out between 17:00 and 23:15 UK time, so yours will arrive at "
         f"{send_uk} UK ({send_local} your time)."
     )
+
+
+# --- Watch list (ticket 29; wording from the ticket 14 prototype) ---
+
+WATCH_USAGE = "Use /watch, /watch add <name> or /watch remove <name>."
+WATCH_EMPTY = "Your Watch list is empty. Try /watch add Salah"
+WATCH_FULL = "Your Watch list is full (20). Remove someone first."
+
+
+def watch_line(name: str, club: str, position: str, price: str) -> str:
+    return f"{name} ({club}, {position}) {price}"
+
+
+def watch_list(lines: list[str]) -> str:
+    listed = "\n".join(lines)
+    return f"Your Watch list:\n{listed}\n\nI will tell you in the Price alert if any may rise."
+
+
+def watch_choice(name: str, club: str, position: str) -> str:
+    return f"{name} ({club}, {position})"
+
+
+def watch_ambiguous(typed: str) -> str:
+    return f'Several Footballers match "{typed}". Which one?'
+
+
+def watch_too_many(count: int, typed: str) -> str:
+    return f'{count} Footballers match "{typed}". Type more of the name.'
+
+
+def watch_no_match(typed: str) -> str:
+    return f'No Footballer matches "{typed}".'
+
+
+def watch_already(name: str) -> str:
+    return f"{name} is already on your Watch list."
+
+
+def watch_added(name: str, club: str, position: str, price: str) -> str:
+    return (
+        f"Added {name} ({club}, {position}) at {price}. "
+        "I'll flag him in the Price alert if he may rise."
+    )
+
+
+def watch_not_there(typed: str) -> str:
+    return f'"{typed}" isn\'t on your Watch list.'
+
+
+def watch_removed(name: str) -> str:
+    return f"Removed {name}."
+
+
+def settings_watch_list(names: list[str] | None, count: int) -> str:
+    """The /settings line. ``names`` is ``None`` when FPL can't be reached for them."""
+    if count == 0:
+        return "Watch list: empty"
+    if names is None:
+        return f"Watch list: {count} Footballers"
+    return "Watch list: " + ", ".join(names)

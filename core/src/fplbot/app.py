@@ -24,6 +24,7 @@ from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient, Priorit
 from fplbot.sources.live import HttpxFplTransport
 from fplbot.store.db import create_engine
 from fplbot.store.members import MemberStore
+from fplbot.store.watch_list import WatchListStore
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class FplBotApp:
             Conversation(
                 owner_id=config.owner_telegram_id,
                 members=self.members,
+                watch_list=WatchListStore(self.engine),
                 fpl=self.fpl.with_priority(Priority.INTERACTIVE),
                 clock=self.clock,
             ),
