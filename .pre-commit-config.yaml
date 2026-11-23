@@ -1,0 +1,8 @@
+# Local secret scanning before each commit. Install once per clone:
+#   uvx pre-commit install
+# CI runs the same gitleaks check on every PR (.github/workflows/gitleaks.yml).
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1
+    hooks:
+      - id: gitleaks
