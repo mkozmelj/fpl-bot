@@ -1,0 +1,17 @@
+{
+  "id": 1003,
+  "name": "No League FC",
+  "player_first_name": "Clara",
+  "player_last_name": "Penhallow",
+  "player_region_name": "Nowhereland",
+  "summary_overall_points": 401,
+  "summary_overall_rank": 1203441,
+  "leagues": {
+    "classic": [
+      {"id": 314, "name": "Overall", "short_name": "overall", "league_type": "s", "scoring": "c", "entry_rank": 1203441},
+      {"id": 276, "name": "Gameweek 1", "short_name": "event-1", "league_type": "s", "scoring": "c", "entry_rank": 990001}
+    ],
+    "h2h": [],
+    "cup": {"matches": [], "status": {"qualification_event": null}}
+  }
+}

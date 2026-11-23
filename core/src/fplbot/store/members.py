@@ -3,10 +3,12 @@
 import hashlib
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from enum import Enum
+from datetime import datetime, time, timedelta
+from enum import Enum, StrEnum
+from typing import Any, Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from fplbot.store.schema import Invite, Member
@@ -31,6 +33,39 @@ class Joined:
 
 
 type Redemption = Joined | Refusal
+
+
+class Goal(StrEnum):
+    OVERALL = "overall"
+    LEAGUE = "league"
+
+
+@dataclass(frozen=True)
+class GoalLeague:
+    """The Mini-league a Member's Goal targets."""
+
+    id: int
+    kind: Literal["classic", "h2h"]
+    name: str
+
+
+@dataclass(frozen=True)
+class MemberRecord:
+    """Everything stored about a Member (``/settings`` shows it)."""
+
+    number: int
+    chat_id: int
+    active: bool
+    team_id: int | None
+    team_name: str | None
+    goal: Goal | None
+    league: GoalLeague | None
+    timezone: str | None
+    alert_time: time
+
+    @property
+    def joining(self) -> bool:
+        return not self.active
 
 
 class MemberStore:
@@ -81,6 +116,74 @@ class MemberStore:
     async def member_number(self, chat_id: int) -> int | None:
         async with self._sessions() as session:
             return await session.scalar(select(Member.id).where(Member.chat_id == chat_id))
+
+    async def get(self, chat_id: int) -> MemberRecord | None:
+        async with self._sessions() as session:
+            member = await session.scalar(select(Member).where(Member.chat_id == chat_id))
+            return None if member is None else _record(member)
+
+    async def team_linked_elsewhere(self, team_id: int, chat_id: int) -> bool:
+        """Whether another Member has already linked FPL team ``team_id``."""
+        async with self._sessions() as session:
+            other = await session.scalar(
+                select(Member.id).where(Member.team_id == team_id, Member.chat_id != chat_id)
+            )
+            return other is not None
+
+    async def link_team(self, chat_id: int, team_id: int, team_name: str) -> bool:
+        """Link the team; ``False`` if another Member linked it first."""
+        try:
+            await self._update(chat_id, team_id=team_id, team_name=team_name)
+        except IntegrityError:
+            return False
+        return True
+
+    async def set_goal(self, chat_id: int, goal: Goal, league: GoalLeague | None) -> None:
+        await self._update(
+            chat_id,
+            goal=goal.value,
+            league_id=league.id if league else None,
+            league_kind=league.kind if league else None,
+            league_name=league.name if league else None,
+        )
+
+    async def set_timezone(self, chat_id: int, timezone: str) -> None:
+        await self._update(chat_id, timezone=timezone)
+
+    async def set_alert_time(self, chat_id: int, alert_time: time) -> None:
+        await self._update(chat_id, alert_time=alert_time)
+
+    async def activate(self, chat_id: int) -> None:
+        await self._update(chat_id, status="active")
+
+    async def delete(self, chat_id: int) -> None:
+        """Hard-delete the Member. Rows in other tables go with it through their
+        ``ON DELETE CASCADE`` foreign keys to ``members.id``. Invites are not linked to Members,
+        so a used invite stays used."""
+        async with self._sessions.begin() as session:
+            await session.execute(delete(Member).where(Member.chat_id == chat_id))
+
+    async def _update(self, chat_id: int, **values: Any) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(update(Member).where(Member.chat_id == chat_id).values(values))
+
+
+def _record(member: Member) -> MemberRecord:
+    league = None
+    if member.league_id is not None and member.league_name is not None:
+        kind: Literal["classic", "h2h"] = "h2h" if member.league_kind == "h2h" else "classic"
+        league = GoalLeague(member.league_id, kind, member.league_name)
+    return MemberRecord(
+        number=member.id,
+        chat_id=member.chat_id,
+        active=member.status == "active",
+        team_id=member.team_id,
+        team_name=member.team_name,
+        goal=Goal(member.goal) if member.goal else None,
+        league=league,
+        timezone=member.timezone,
+        alert_time=member.alert_time,
+    )
 
 
 def _hash(code: str) -> str:

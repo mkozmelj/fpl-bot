@@ -61,7 +61,24 @@ class BotApiCall:
 class SentMessage:
     chat_id: int
     text: str
+    message_id: int
     reply_markup: Any = None
+
+    @property
+    def buttons(self) -> list[str]:
+        """The labels of this message's inline keyboard buttons, row by row."""
+        return [button["text"] for _, button in self._inline_buttons()]
+
+    def callback_data(self, label: str) -> str:
+        for data, button in self._inline_buttons():
+            if button["text"] == label:
+                return data
+        raise AssertionError(f"no button {label!r} in {self.buttons}")
+
+    def _inline_buttons(self) -> list[tuple[str, Mapping[str, Any]]]:
+        markup: Mapping[str, Any] = self.reply_markup or {}
+        rows: list[list[Mapping[str, Any]]] = markup.get("inline_keyboard", [])
+        return [(str(button["callback_data"]), button) for row in rows for button in row]
 
 
 class FakeTelegram(BaseRequest):
@@ -70,6 +87,7 @@ class FakeTelegram(BaseRequest):
 
     def __init__(self) -> None:
         self.calls: list[BotApiCall] = []
+        self.sent_messages: list[SentMessage] = []
         self._message_ids = count(1)
 
     @property
@@ -101,23 +119,20 @@ class FakeTelegram(BaseRequest):
         if api_method == "getMe":
             return {"id": 1, "is_bot": True, "first_name": "FPL test bot", "username": BOT_USERNAME}
         if api_method == "sendMessage":
+            sent = SentMessage(
+                chat_id=int(params["chat_id"]),
+                text=str(params["text"]),
+                message_id=next(self._message_ids),
+                reply_markup=params.get("reply_markup"),
+            )
+            self.sent_messages.append(sent)
             return {
-                "message_id": next(self._message_ids),
+                "message_id": sent.message_id,
                 "date": 0,
-                "chat": {"id": int(params["chat_id"]), "type": "private"},
-                "text": params["text"],
+                "chat": {"id": sent.chat_id, "type": "private"},
+                "text": sent.text,
             }
         return True
-
-    @property
-    def sent_messages(self) -> list[SentMessage]:
-        return [
-            SentMessage(
-                int(c.params["chat_id"]), str(c.params["text"]), c.params.get("reply_markup")
-            )
-            for c in self.calls
-            if c.method == "sendMessage"
-        ]
 
 
 @dataclass
@@ -132,9 +147,28 @@ class Chat:
     async def send(self, text: str) -> None:
         await self.harness.deliver_text(self, text)
 
+    async def press(self, label: str, on: SentMessage | None = None) -> None:
+        """Tap the inline button ``label`` on message ``on``; by default on the latest message
+        that offers a button with that label. Pass an older message to tap a stale keyboard."""
+        if on is None:
+            offering = [m for m in self.messages if label in m.buttons]
+            assert offering, f"no message in chat {self.chat_id} offers {label!r}"
+            on = offering[-1]
+        await self.harness.deliver_press(self, on, on.callback_data(label))
+
+    @property
+    def messages(self) -> list[SentMessage]:
+        return [m for m in self.harness.telegram.sent_messages if m.chat_id == self.chat_id]
+
+    @property
+    def last_message(self) -> SentMessage:
+        messages = self.messages
+        assert messages, f"chat {self.chat_id} received nothing"
+        return messages[-1]
+
     @property
     def replies(self) -> list[str]:
-        return [m.text for m in self.harness.telegram.sent_messages if m.chat_id == self.chat_id]
+        return [m.text for m in self.messages]
 
     @property
     def last_reply(self) -> str:
@@ -146,6 +180,7 @@ class Chat:
 @dataclass
 class BotHarness:
     app: FplBotApp
+    config: Config
     clock: FakeClock
     telegram: FakeTelegram
     fpl: FakeFplTransport
@@ -165,22 +200,66 @@ class BotHarness:
     async def advance(self, delta: timedelta) -> None:
         self.clock.advance(delta)
 
+    async def restart(self) -> None:
+        """Stop the bot and start a fresh process against the same database, clock, Telegram
+        and FPL fakes: anything held only in memory is gone."""
+        await self.app.__aexit__(None, None, None)
+        self.app = FplBotApp(
+            self.config, clock=self.clock, fpl_transport=self.fpl, telegram_request=self.telegram
+        )
+        await self.app.__aenter__()
+
+    async def invited_friend(self, user_id: int) -> Chat:
+        """A friend who has just redeemed an owner's invite: allow-listed, setup not started."""
+        await self.owner.send("/invite")
+        friend = self.private_chat(user_id)
+        await friend.send(f"/start {start_code_in(self.owner.last_reply)}")
+        return friend
+
+    async def active_member(
+        self, user_id: int, team_id: int, timezone: str = "Europe/London"
+    ) -> Chat:
+        """A Member who finished setup through the real flow: ``team_id`` linked (it needs a
+        fixture under ``entry/``), Goal Overall rank, ``timezone`` (one of the four buttons)."""
+        member = await self.invited_friend(user_id)
+        await member.send(str(team_id))
+        await member.press("Yes, that's me")
+        await member.press("Overall rank")
+        await member.press(timezone)
+        assert member.last_reply.startswith("You're all set"), member.last_reply
+        return member
+
     async def deliver_text(self, chat: Chat, text_: str) -> None:
         update_id = next(self._update_ids)
-        chat_json: dict[str, Any] = {"id": chat.chat_id, "type": chat.kind}
-        chat_json |= (
-            {"first_name": SENDER_NAME} if chat.kind == "private" else {"title": "Test group"}
-        )
         message: dict[str, Any] = {
             "message_id": update_id,
             "date": int(self.clock.now().timestamp()),
-            "chat": chat_json,
-            "from": {"id": chat.user_id, "is_bot": False, "first_name": SENDER_NAME},
+            "chat": _chat_json(chat),
+            "from": _sender_json(chat),
             "text": text_,
         }
         if command := re.match(r"/\S+", text_):
             message["entities"] = [{"type": "bot_command", "offset": 0, "length": command.end()}]
         await self.app.feed({"update_id": update_id, "message": message})
+
+    async def deliver_press(self, chat: Chat, on: SentMessage, callback_data: str) -> None:
+        """Feed a ``callback_query`` update: ``chat``'s user tapped a button on message ``on``."""
+        update_id = next(self._update_ids)
+        query: dict[str, Any] = {
+            "id": f"query-{update_id}",
+            "from": _sender_json(chat),
+            "chat_instance": f"instance-{chat.chat_id}",
+            "data": callback_data,
+            "message": {
+                "message_id": on.message_id,
+                "date": 0,
+                "chat": _chat_json(chat),
+                "from": {"id": 1, "is_bot": True, "first_name": "FPL test bot"},
+                "text": on.text,
+                "reply_markup": on.reply_markup,
+            },
+        }
+        await self.app.feed({"update_id": update_id, "callback_query": query})
 
     async def database_text(self) -> str:
         """Every row of every table, as text: for checking what is (not) stored."""
@@ -193,6 +272,16 @@ class BotHarness:
                 rows = await connection.execute(text(f'SELECT * FROM "{table}"'))  # noqa: S608
                 dump.extend(f"{table}: {tuple(row)}" for row in rows)
         return "\n".join(dump)
+
+
+def _chat_json(chat: Chat) -> dict[str, Any]:
+    if chat.kind == "private":
+        return {"id": chat.chat_id, "type": "private", "first_name": SENDER_NAME}
+    return {"id": chat.chat_id, "type": chat.kind, "title": "Test group"}
+
+
+def _sender_json(chat: Chat) -> dict[str, Any]:
+    return {"id": chat.user_id, "is_bot": False, "first_name": SENDER_NAME}
 
 
 def start_code_in(invite_reply: str) -> str:
@@ -223,7 +312,7 @@ async def running_bot(database_url: str) -> AsyncGenerator[BotHarness]:
     )
     clock, telegram, fpl = FakeClock(), FakeTelegram(), FakeFplTransport()
     app = FplBotApp(config, clock=clock, fpl_transport=fpl, telegram_request=telegram)
-    harness = BotHarness(app=app, clock=clock, telegram=telegram, fpl=fpl)
+    harness = BotHarness(app=app, config=config, clock=clock, telegram=telegram, fpl=fpl)
 
     root = logging.getLogger()
     previous_level = root.level
@@ -232,8 +321,11 @@ async def running_bot(database_url: str) -> AsyncGenerator[BotHarness]:
     root.setLevel(logging.INFO)
     root.addHandler(handler)
     try:
-        async with app:
+        await app.__aenter__()
+        try:
             yield harness
+        finally:
+            await harness.app.__aexit__(None, None, None)
     finally:
         root.removeHandler(handler)
         root.setLevel(previous_level)
