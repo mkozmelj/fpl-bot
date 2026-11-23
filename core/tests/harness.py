@@ -414,7 +414,9 @@ class BotHarness:
                     awaited[waiter.future].add(task)
 
         work = {task for task in (*self.app.jobs.running, *self._driven) if not task.done()}
-        parked = {task for task in tasks if self.clock.is_asleep(task)}
+        # Waiting for a held lock counts as parked: the holder is either awake work itself
+        # (so we keep settling) or asleep on the clock (so time has to move on).
+        parked = {task for task in tasks if self.clock.is_asleep(task) or _waiting_for_lock(task)}
         changed = True
         while changed:
             changed = False
@@ -524,6 +526,17 @@ def canned_fpl_response(name: str) -> FplResponse:
     spec = json.loads((FPL_RESPONSES / f"{name}.json").read_text())
     body = json.dumps(spec["json"]) if "json" in spec else spec["body"]
     return FplResponse(spec["status"], body.encode(), spec.get("headers", {}))
+
+
+def _waiting_for_lock(task: asyncio.Task[Any]) -> bool:
+    """Whether ``task`` is blocked in ``asyncio.Lock.acquire`` on a lock someone still holds
+    (e.g. an interactive command waiting for the shared ``bootstrap-static`` fetch of a job)."""
+    graph = asyncio.capture_call_graph(task)
+    if graph is None or not graph.call_stack:
+        return False
+    frame = graph.call_stack[0].frame
+    lock = frame.f_locals.get("self")
+    return frame.f_code.co_name == "acquire" and isinstance(lock, asyncio.Lock) and lock.locked()
 
 
 def _chat_json(chat: Chat) -> dict[str, Any]:

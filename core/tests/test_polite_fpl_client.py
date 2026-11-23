@@ -164,7 +164,8 @@ async def test_a_resource_with_an_etag_is_fetched_conditionally(bot: BotHarness)
     first, second = bot.fpl.requests
     assert "If-None-Match" not in first.headers
     assert second.headers["If-None-Match"] == '"v1"'
-    assert seen == [3, 3]
+    footballers_in_fixture = len(fresh.json()["elements"])
+    assert seen == [footballers_in_fixture, footballers_in_fixture]
 
 
 async def test_bootstrap_static_is_reused_for_15_minutes_then_refetched(bot: BotHarness) -> None:

@@ -1,0 +1,12 @@
+{
+  "current": [
+    {"event": 9, "points": 58, "total_points": 458, "rank": 1650000, "rank_sort": 1650100, "overall_rank": 91234, "percentile_rank": 1, "bank": 12, "value": 1018, "event_transfers": 1, "event_transfers_cost": 0, "points_on_bench": 6},
+    {"event": 10, "points": 54, "total_points": 512, "rank": 2100000, "rank_sort": 2100500, "overall_rank": 84213, "percentile_rank": 1, "bank": 3, "value": 1021, "event_transfers": 2, "event_transfers_cost": 4, "points_on_bench": 2}
+  ],
+  "past": [
+    {"season_name": "2025/26", "total_points": 2101, "rank": 250123}
+  ],
+  "chips": [
+    {"name": "wildcard", "time": "2026-10-23T18:00:00Z", "event": 9}
+  ]
+}

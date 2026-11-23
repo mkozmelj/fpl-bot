@@ -235,8 +235,8 @@ async def test_settings_and_help_show_the_watch_list(bot: BotHarness) -> None:
 
     assert empty.endswith("\nWatch list: empty")
     assert listed.endswith("\nWatch list: Varenne, Quillon")
-    assert alice.last_reply.startswith(
-        "/watch  show your Watch list\n/watch add <name>\n/watch remove <name>\n/goal"
+    assert "\n/watch  show your Watch list\n/watch add <name>\n/watch remove <name>\n/goal" in (
+        alice.last_reply
     )
 
 

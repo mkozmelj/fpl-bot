@@ -19,6 +19,8 @@ from fplbot.delivery import telegram
 from fplbot.delivery.conversation import Conversation
 from fplbot.delivery.owner_alerts import OwnerAlerts
 from fplbot.delivery.owner_chat import TelegramOwnerChat
+from fplbot.jobs.backfill import JOB_NAME as BACKFILL_JOB
+from fplbot.jobs.backfill import backfill_member
 from fplbot.jobs.member_backup import MemberBackup
 from fplbot.jobs.runner import JobRunner
 from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
@@ -26,6 +28,8 @@ from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient, Priorit
 from fplbot.sources.live import HttpxFplTransport
 from fplbot.store.db import create_engine
 from fplbot.store.members import MemberStore
+from fplbot.store.reference import ReferenceStore
+from fplbot.store.squads import SquadStore
 from fplbot.store.watch_list import WatchListStore
 
 log = logging.getLogger(__name__)
@@ -48,6 +52,19 @@ class FplBotApp:
             fpl_transport = self._fpl_transport_for(config)
         # Every FPL request in the process goes through this one client (one rate limit).
         self.fpl = FplSource(PoliteFplClient(fpl_transport, self.clock))
+        # Reference data (Gameweeks, Footballers, clubs, fixtures) and Members' history/picks.
+        self.reference = ReferenceStore(self.engine, self.clock)
+        self.squads = SquadStore(self.engine)
+
+        def on_team_linked(member_number: int, team_id: int) -> None:
+            job = backfill_member(
+                member_number,
+                team_id,
+                reference=self.reference,
+                squads=self.squads,
+                clock=self.clock,
+            )
+            self.jobs.start(BACKFILL_JOB, job, Priority.ROUTINE)
 
         builder = Application.builder().token(config.telegram_bot_token)
         if telegram_request is not None:
@@ -61,6 +78,9 @@ class FplBotApp:
                 watch_list=WatchListStore(self.engine),
                 fpl=self.fpl.with_priority(Priority.INTERACTIVE),
                 clock=self.clock,
+                reference=self.reference,
+                squads=self.squads,
+                on_team_linked=on_team_linked,
             ),
         )
 

@@ -112,6 +112,7 @@ LEFT = "Done. Everything I stored about you is deleted. To rejoin you need a new
 
 # (command, what it does) in /help order. Later tickets add their commands here.
 COMMANDS: list[tuple[str, str]] = [
+    ("/squad", "your Squad at the last deadline"),
     ("/watch", "show your Watch list"),
     ("/watch add <name>", ""),
     ("/watch remove <name>", ""),
@@ -185,6 +186,47 @@ def alert_time_clamped(alert_time: str, timezone: str, send_uk: str, send_local:
         "Price alerts only go out between 17:00 and 23:15 UK time, so yours will arrive at "
         f"{send_uk} UK ({send_local} your time)."
     )
+
+
+# --- /squad (ticket 30) ---
+
+NO_DEADLINE_YET = "The season hasn't started yet: there's no Squad from a deadline to show."
+
+
+def squad(
+    team_name: str,
+    gameweek: int,
+    lines: list[tuple[str, list[str]]],
+    bench: list[str],
+    hidden_note: str | None,
+) -> str:
+    """``lines``: (position, names) for the XI in position order; names carry (C)/(VC)."""
+    xi = "\n".join(f"{position}  {', '.join(names)}" for position, names in lines)
+    text = f"{team_name} · your Squad at the GW{gameweek} deadline\n{xi}\nBench: {', '.join(bench)}"
+    return f"{text}\n\n{hidden_note}" if hidden_note else text
+
+
+def captain(name: str) -> str:
+    return f"{name} (C)"
+
+
+def vice_captain(name: str) -> str:
+    return f"{name} (VC)"
+
+
+def picks_hidden(next_gameweek: int, local_deadline: str, last_gameweek: int) -> str:
+    return (
+        f"FPL hides GW{next_gameweek} picks until the deadline ({local_deadline} your time), so "
+        f"changes you've made since GW{last_gameweek} don't show yet."
+    )
+
+
+def no_squad(gameweek: int, hidden_note: str | None) -> str:
+    text = (
+        f"I don't have your Squad from the GW{gameweek} deadline: FPL isn't showing those picks. "
+        "Try /squad again later."
+    )
+    return f"{text}\n\n{hidden_note}" if hidden_note else text
 
 
 # --- Watch list (ticket 29; wording from the ticket 14 prototype) ---

@@ -27,6 +27,7 @@ ASK_TZ = (
 )
 TZ_BUTTONS = ["Europe/London", "Europe/Paris", "America/New_York", "Asia/Kolkata"]
 HELP = (
+    "/squad  your Squad at the last deadline\n"
     "/watch  show your Watch list\n"
     "/watch add <name>\n"
     "/watch remove <name>\n"
