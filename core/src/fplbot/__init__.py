@@ -1,2 +1,1 @@
-def hello() -> str:
-    return "Hello from fplbot!"
+"""fplbot: an invite-only Telegram bot giving Fantasy Premier League advice. See core/README.md."""
