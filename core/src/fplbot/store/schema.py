@@ -81,3 +81,27 @@ class WatchedFootballer(Base):
     )
     footballer_id: Mapped[int] = mapped_column(Integer)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MemberBackupMessage(Base):
+    """A backup document the bot sent to the owner's chat (ticket 39), so the oldest can be
+    deleted once more than the last 7 are there. Not itself part of the backup."""
+
+    __tablename__ = "member_backups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    season: Mapped[str] = mapped_column(String(7))
+    message_id: Mapped[int] = mapped_column(BigInteger)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class OwnerNotice(Base):
+    """A one-time owner DM that was sent (e.g. "backup skipped: no key"), so a restart does not
+    repeat it. Removing the row lets the notice be sent again."""
+
+    __tablename__ = "owner_notices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    season: Mapped[str] = mapped_column(String(7))
+    notice: Mapped[str] = mapped_column(String(32), unique=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
