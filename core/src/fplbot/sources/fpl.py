@@ -20,7 +20,7 @@ import json
 import logging
 import random
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -32,10 +32,19 @@ from fplbot.sources.limiter import Priority, RateLimiter
 __all__ = [
     "FplBadData",
     "FplBlocked",
+    "FplClub",
     "FplDown",
     "FplEntry",
     "FplError",
+    "FplFixture",
+    "FplFootballer",
+    "FplGameweek",
+    "FplHistory",
+    "FplHistoryGameweek",
     "FplLeague",
+    "FplPick",
+    "FplPicks",
+    "FplReference",
     "FplResponse",
     "FplSource",
     "FplTransport",
@@ -43,6 +52,7 @@ __all__ = [
     "FplUpdating",
     "Lookup",
     "PoliteFplClient",
+    "Position",
     "Priority",
 ]
 
@@ -282,6 +292,29 @@ class FplSource:
             cache.data, cache.fetched_at = bootstrap, now
             return bootstrap
 
+    async def reference(self, max_age: timedelta = BOOTSTRAP_MAX_AGE) -> FplReference:
+        """Gameweeks, clubs and Footballers from the in-memory ``bootstrap-static``."""
+        data = await self.bootstrap_static(max_age)
+        return _parsed(_reference, data)
+
+    async def fixtures(self) -> tuple[FplFixture, ...]:
+        """Every fixture of the season (``fixtures/``)."""
+        data = await self.get_json("fixtures/")
+        if data is None:
+            raise FplUnexpectedStatus(404)
+        return _parsed(_fixtures, data)
+
+    async def history(self, entry_id: int) -> FplHistory | None:
+        """A team's season so far (``entry/{id}/history/``); ``None`` if there is no such team."""
+        data = await self.get_json(f"entry/{entry_id}/history/")
+        return None if data is None else _parsed(_history, data)
+
+    async def picks(self, entry_id: int, gameweek: int) -> FplPicks | None:
+        """A team's Squad for a Gameweek whose deadline has passed. ``None`` when FPL hides or
+        has no picks for it (404: the upcoming Gameweek, or before the team existed)."""
+        data = await self.get_json(f"entry/{entry_id}/event/{gameweek}/picks/")
+        return None if data is None else _parsed(lambda d: _picks(gameweek, d), data)
+
     async def entry(self, entry_id: int) -> FplEntry | Lookup:
         """An FPL team. Fail-soft for interactive callers: FPL failing is
         ``Lookup.UNAVAILABLE`` rather than an ``FplError``."""
@@ -345,4 +378,201 @@ def _entry(data: dict[str, Any]) -> FplEntry:
         manager_last_name=str(data.get("player_last_name") or ""),
         overall_rank=int(rank) if rank else None,
         mini_leagues=mini_leagues,
+    )
+
+
+# --- Reference data, history and picks -----------------------------------------------------
+
+type Position = Literal["GKP", "DEF", "MID", "FWD"]
+_POSITIONS: dict[int, Position] = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
+
+
+@dataclass(frozen=True)
+class FplGameweek:
+    id: int
+    deadline: datetime
+    finished: bool
+    data_checked: bool
+
+
+@dataclass(frozen=True)
+class FplClub:
+    id: int
+    name: str
+    short_name: str
+
+
+@dataclass(frozen=True)
+class FplFootballer:
+    id: int
+    web_name: str
+    first_name: str
+    second_name: str
+    club_id: int
+    position: Position
+    now_cost: int  # tenths of a million: 55 is £5.5m
+
+
+@dataclass(frozen=True)
+class FplReference:
+    """The slow-changing part of ``bootstrap-static``."""
+
+    gameweeks: tuple[FplGameweek, ...]
+    clubs: tuple[FplClub, ...]
+    footballers: tuple[FplFootballer, ...]
+
+
+@dataclass(frozen=True)
+class FplFixture:
+    id: int
+    gameweek: int | None  # None while unscheduled (postponed)
+    kickoff: datetime | None
+    home_club_id: int
+    away_club_id: int
+    home_difficulty: int | None
+    away_difficulty: int | None
+    home_score: int | None
+    away_score: int | None
+    finished: bool
+
+
+@dataclass(frozen=True)
+class FplHistoryGameweek:
+    """One Gameweek of a team's season. Money is in tenths of a million."""
+
+    gameweek: int
+    points: int
+    total_points: int
+    rank: int | None
+    overall_rank: int | None
+    bank: int
+    value: int
+    transfers: int
+    transfers_cost: int
+    points_on_bench: int
+    chip: str | None  # e.g. "wildcard", "bboost", "3xc", "freehit"
+
+
+@dataclass(frozen=True)
+class FplHistory:
+    gameweeks: tuple[FplHistoryGameweek, ...]
+
+
+@dataclass(frozen=True)
+class FplPick:
+    footballer_id: int
+    slot: int  # 1-11 the XI in formation order, 12-15 the bench in order
+    multiplier: int
+    is_captain: bool
+    is_vice_captain: bool
+
+
+@dataclass(frozen=True)
+class FplPicks:
+    gameweek: int
+    active_chip: str | None
+    picks: tuple[FplPick, ...]
+
+
+def _parsed[T](parse: Callable[[Any], T], data: Any) -> T:
+    try:
+        return parse(data)
+    except ValueError, KeyError, TypeError, AttributeError:
+        raise FplBadData(200) from None
+
+
+def _when(value: Any) -> datetime:
+    return datetime.fromisoformat(str(value))
+
+
+def _optional_int(value: Any) -> int | None:
+    return None if value is None else int(value)
+
+
+def _reference(data: dict[str, Any]) -> FplReference:
+    return FplReference(
+        gameweeks=tuple(
+            FplGameweek(
+                id=int(event["id"]),
+                deadline=_when(event["deadline_time"]),
+                finished=bool(event.get("finished")),
+                data_checked=bool(event.get("data_checked")),
+            )
+            for event in data["events"]
+        ),
+        clubs=tuple(
+            FplClub(int(team["id"]), str(team["name"]), str(team["short_name"]))
+            for team in data["teams"]
+        ),
+        footballers=tuple(
+            FplFootballer(
+                id=int(element["id"]),
+                web_name=str(element["web_name"]),
+                first_name=str(element.get("first_name") or ""),
+                second_name=str(element.get("second_name") or ""),
+                club_id=int(element["team"]),
+                position=_POSITIONS[int(element["element_type"])],
+                now_cost=int(element["now_cost"]),
+            )
+            for element in data["elements"]
+        ),
+    )
+
+
+def _fixtures(data: list[dict[str, Any]]) -> tuple[FplFixture, ...]:
+    return tuple(
+        FplFixture(
+            id=int(fixture["id"]),
+            gameweek=_optional_int(fixture.get("event")),
+            kickoff=_when(fixture["kickoff_time"]) if fixture.get("kickoff_time") else None,
+            home_club_id=int(fixture["team_h"]),
+            away_club_id=int(fixture["team_a"]),
+            home_difficulty=_optional_int(fixture.get("team_h_difficulty")),
+            away_difficulty=_optional_int(fixture.get("team_a_difficulty")),
+            home_score=_optional_int(fixture.get("team_h_score")),
+            away_score=_optional_int(fixture.get("team_a_score")),
+            finished=bool(fixture.get("finished")),
+        )
+        for fixture in data
+    )
+
+
+def _history(data: dict[str, Any]) -> FplHistory:
+    played: list[dict[str, Any]] = data.get("chips") or []
+    chips = {int(chip["event"]): str(chip["name"]) for chip in played}
+    return FplHistory(
+        tuple(
+            FplHistoryGameweek(
+                gameweek=int(row["event"]),
+                points=int(row["points"]),
+                total_points=int(row["total_points"]),
+                rank=_optional_int(row.get("rank")),
+                overall_rank=_optional_int(row.get("overall_rank")),
+                bank=int(row["bank"]),
+                value=int(row["value"]),
+                transfers=int(row["event_transfers"]),
+                transfers_cost=int(row["event_transfers_cost"]),
+                points_on_bench=int(row["points_on_bench"]),
+                chip=chips.get(int(row["event"])),
+            )
+            for row in data["current"]
+        )
+    )
+
+
+def _picks(gameweek: int, data: dict[str, Any]) -> FplPicks:
+    chip = data.get("active_chip")
+    return FplPicks(
+        gameweek=gameweek,
+        active_chip=str(chip) if chip else None,
+        picks=tuple(
+            FplPick(
+                footballer_id=int(pick["element"]),
+                slot=int(pick["position"]),
+                multiplier=int(pick["multiplier"]),
+                is_captain=bool(pick["is_captain"]),
+                is_vice_captain=bool(pick["is_vice_captain"]),
+            )
+            for pick in data["picks"]
+        ),
     )

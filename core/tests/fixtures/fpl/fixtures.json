@@ -1,0 +1,6 @@
+[
+  {"id": 91, "event": 10, "kickoff_time": "2026-10-31T15:00:00Z", "team_h": 1, "team_a": 2, "team_h_score": 2, "team_a_score": 1, "finished": true, "finished_provisional": true, "team_h_difficulty": 3, "team_a_difficulty": 2, "stats": []},
+  {"id": 92, "event": 10, "kickoff_time": "2026-11-01T16:30:00Z", "team_h": 3, "team_a": 1, "team_h_score": 0, "team_a_score": 0, "finished": true, "finished_provisional": true, "team_h_difficulty": 2, "team_a_difficulty": 4, "stats": []},
+  {"id": 101, "event": 11, "kickoff_time": "2026-11-21T12:30:00Z", "team_h": 2, "team_a": 3, "team_h_score": null, "team_a_score": null, "finished": false, "finished_provisional": false, "team_h_difficulty": 3, "team_a_difficulty": 3, "stats": []},
+  {"id": 150, "event": null, "kickoff_time": null, "team_h": 1, "team_a": 3, "team_h_score": null, "team_a_score": null, "finished": false, "finished_provisional": false, "team_h_difficulty": 2, "team_a_difficulty": 3, "stats": []}
+]

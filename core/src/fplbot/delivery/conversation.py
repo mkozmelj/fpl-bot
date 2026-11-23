@@ -11,11 +11,13 @@ from datetime import datetime, timedelta
 
 from fplbot.clock import Clock
 from fplbot.delivery import texts
-from fplbot.delivery.member_flow import MemberFlow
+from fplbot.delivery.member_flow import MemberFlow, TeamLinked
 from fplbot.delivery.messages import Button, Incoming, Press, Reply
 from fplbot.delivery.rate_limit import AttemptLimiter
 from fplbot.sources.fpl import FplSource
 from fplbot.store.members import Joined, MemberStore, Refusal
+from fplbot.store.reference import ReferenceStore
+from fplbot.store.squads import SquadStore
 from fplbot.store.watch_list import WatchListStore
 
 __all__ = ["Button", "Conversation", "Incoming", "Press", "Reply"]
@@ -38,12 +40,23 @@ class Conversation:
         watch_list: WatchListStore,
         fpl: FplSource,
         clock: Clock,
+        reference: ReferenceStore,
+        squads: SquadStore,
+        on_team_linked: TeamLinked,
     ) -> None:
         self._owner_id = owner_id
         self._members = members
         self._clock = clock
         self._wrong_codes = AttemptLimiter(WRONG_CODES_ALLOWED, WRONG_CODE_WINDOW)
-        self._member_flow = MemberFlow(members=members, watch_list=watch_list, fpl=fpl, clock=clock)
+        self._member_flow = MemberFlow(
+            members=members,
+            watch_list=watch_list,
+            fpl=fpl,
+            clock=clock,
+            reference=reference,
+            squads=squads,
+            on_team_linked=on_team_linked,
+        )
 
     async def respond(self, message: Incoming, bot_username: str) -> list[Reply]:
         command, argument = _parse_command(message.text)

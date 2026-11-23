@@ -8,6 +8,7 @@ from datetime import datetime, time
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -65,6 +66,101 @@ class Invite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# --- Reference data (ticket 30): kept across seasons, keyed by (season, FPL id) ---
+# Written from bootstrap-static and fixtures/ by ``store/reference.py``; never raw responses.
+
+
+class Club(Base):
+    __tablename__ = "clubs"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    name: Mapped[str] = mapped_column(String(50))
+    short_name: Mapped[str] = mapped_column(String(8))
+
+
+class Footballer(Base):
+    __tablename__ = "footballers"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    web_name: Mapped[str] = mapped_column(String(50))
+    first_name: Mapped[str] = mapped_column(String(100))
+    second_name: Mapped[str] = mapped_column(String(100))
+    club_id: Mapped[int] = mapped_column(Integer)
+    position: Mapped[str] = mapped_column(String(3))  # GKP, DEF, MID or FWD
+    now_cost: Mapped[int] = mapped_column(Integer)  # tenths of a million
+
+
+class Gameweek(Base):
+    __tablename__ = "gameweeks"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished: Mapped[bool] = mapped_column(Boolean)
+    data_checked: Mapped[bool] = mapped_column(Boolean)
+
+
+class Fixture(Base):
+    __tablename__ = "fixtures"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    gameweek: Mapped[int | None] = mapped_column(Integer)  # NULL while unscheduled
+    kickoff: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    home_club_id: Mapped[int] = mapped_column(Integer)
+    away_club_id: Mapped[int] = mapped_column(Integer)
+    home_difficulty: Mapped[int | None] = mapped_column(Integer)
+    away_difficulty: Mapped[int | None] = mapped_column(Integer)
+    home_score: Mapped[int | None] = mapped_column(Integer)
+    away_score: Mapped[int | None] = mapped_column(Integer)
+    finished: Mapped[bool] = mapped_column(Boolean)
+
+
+# --- A Member's season (ticket 30): deleted with the Member (``/leave``) ---
+
+
+class MemberGameweek(Base):
+    """One row of the Member's FPL history. Money in tenths of a million."""
+
+    __tablename__ = "member_gameweeks"
+
+    member_id: Mapped[int] = mapped_column(
+        ForeignKey("members.id", ondelete="CASCADE"), primary_key=True
+    )
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    gameweek: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    points: Mapped[int] = mapped_column(Integer)
+    total_points: Mapped[int] = mapped_column(Integer)
+    rank: Mapped[int | None] = mapped_column(Integer)
+    overall_rank: Mapped[int | None] = mapped_column(Integer)
+    bank: Mapped[int] = mapped_column(Integer)
+    value: Mapped[int] = mapped_column(Integer)
+    transfers: Mapped[int] = mapped_column(Integer)
+    transfers_cost: Mapped[int] = mapped_column(Integer)
+    points_on_bench: Mapped[int] = mapped_column(Integer)
+    chip: Mapped[str | None] = mapped_column(String(16))
+
+
+class MemberPick(Base):
+    """One of the 15 picks of a Member's Squad at a Gameweek's deadline. ``slot`` 1-11 is the
+    XI in formation order, 12-15 the bench in order."""
+
+    __tablename__ = "member_picks"
+
+    member_id: Mapped[int] = mapped_column(
+        ForeignKey("members.id", ondelete="CASCADE"), primary_key=True
+    )
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    gameweek: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    slot: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    footballer_id: Mapped[int] = mapped_column(Integer)
+    multiplier: Mapped[int] = mapped_column(Integer)
+    is_captain: Mapped[bool] = mapped_column(Boolean)
+    is_vice_captain: Mapped[bool] = mapped_column(Boolean)
 
 
 class WatchedFootballer(Base):
