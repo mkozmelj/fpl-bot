@@ -36,6 +36,9 @@ Dependency direction: `delivery -> advice -> prediction/optimisation -> store ->
 
 ## Running locally
 
+The quickest path is the root `README.md`: copy `.env.example` to `.env` and start the
+docker-compose Postgres (`docker compose up -d` from the repo root). The variables, by hand:
+
 ```sh
 cd core
 uv sync
@@ -117,3 +120,8 @@ Add a revision under `src/fplbot/store/migrations/versions/` (hand-written or
 `DATABASE_URL=... uv run alembic revision --autogenerate -m "..."`), update `store/schema.py`, and
 give every new table a `season` column. Migrations must be backward-compatible with the previous
 image (ADR 0003): expand, then contract.
+
+CI enforces this with `uv run python -m fplbot.store.migration_check`: an `upgrade()` that drops
+or renames a table or column (Alembic ops or raw SQL) fails unless the module says
+`contract_step = True`. Write that contract migration only once no deployed image reads the old
+shape.
