@@ -1,0 +1,48 @@
+# Weekly, grouped update PRs. They are reviewed and merged by hand, never auto-merged.
+# A 7-day cooldown skips releases younger than a week, so a hijacked release has time to be pulled.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /core
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      python:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # The bot's Dockerfile (ticket 42) and the local docker-compose Postgres.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      docker:
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      docker-compose:
+        patterns: ["*"]

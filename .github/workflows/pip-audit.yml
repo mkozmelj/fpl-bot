@@ -1,0 +1,45 @@
+# Known-vulnerability audit of the locked Python dependencies: on every PR and nightly, so a new
+# advisory against an unchanged lockfile still turns up.
+name: pip-audit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 2 * * *" # nightly, 02:23 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: core
+
+jobs:
+  audit:
+    name: pip-audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.12.1"
+          enable-cache: false
+      - name: Export the hashed lockfile
+        run: |
+          uv export --locked --format requirements-txt --no-emit-project \
+            --output-file "$RUNNER_TEMP/requirements.txt"
+      - name: Audit
+        run: |
+          uvx --from "pip-audit==2.10.1" pip-audit --strict --progress-spinner off \
+            --disable-pip --require-hashes --requirement "$RUNNER_TEMP/requirements.txt"

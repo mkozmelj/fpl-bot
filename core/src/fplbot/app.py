@@ -20,7 +20,7 @@ from fplbot.delivery.conversation import Conversation
 from fplbot.delivery.owner_alerts import OwnerAlerts
 from fplbot.jobs.runner import JobRunner
 from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
-from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient
+from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient, Priority
 from fplbot.sources.live import HttpxFplTransport
 from fplbot.store.db import create_engine
 from fplbot.store.members import MemberStore
@@ -52,7 +52,12 @@ class FplBotApp:
         self.telegram = builder.build()
         telegram.install(
             self.telegram,
-            Conversation(owner_id=config.owner_telegram_id, members=self.members, clock=self.clock),
+            Conversation(
+                owner_id=config.owner_telegram_id,
+                members=self.members,
+                fpl=self.fpl.with_priority(Priority.INTERACTIVE),
+                clock=self.clock,
+            ),
         )
 
         owner_id = config.owner_telegram_id
@@ -93,7 +98,7 @@ class FplBotApp:
         updater = self.telegram.updater
         if updater is None:
             raise RuntimeError("the Telegram application was built without an updater")
-        await updater.start_polling(allowed_updates=[Update.MESSAGE])
+        await updater.start_polling(allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY])
         log.info("polling")
         try:
             await stop.wait()

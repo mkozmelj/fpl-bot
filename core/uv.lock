@@ -57,6 +57,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "python-telegram-bot" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "tzdata" },
 ]
 
 [package.dev-dependencies]
@@ -74,6 +75,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "python-telegram-bot", specifier = ">=22,<23" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<2.1" },
+    { name = "tzdata", specifier = ">=2025.1" },
 ]
 
 [package.metadata.requires-dev]

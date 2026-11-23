@@ -39,6 +39,9 @@ Dependency direction: `delivery -> advice -> prediction/optimisation -> store ->
 
 ## Running locally
 
+The quickest path is the root `README.md`: copy `.env.example` to `.env` and start the
+docker-compose Postgres (`docker compose up -d` from the repo root). The variables, by hand:
+
 ```sh
 cd core
 uv sync
@@ -104,9 +107,15 @@ runs in simulated time: `bot.advance(delta)` wakes every sleeper due within `del
 Never wait on a bare `asyncio.Event` or `asyncio.sleep` for time-based behaviour: the harness
 cannot see it and reports "the bot did not settle".
 
-Extending the harness: button presses (callback queries) and scheduled-job ticks belong in
-`BotHarness` (`deliver_text` shows the update shape; `advance` is where due jobs should run once
-the scheduler exists). `FakeTelegram._result` answers Bot API methods; add a case when the bot
+Buttons: `chat.last_message.buttons` (labels), `await chat.press(label)` (taps it on the latest
+message offering it; `on=message` taps an older, stale keyboard). Shortcuts:
+`await bot.invited_friend(user_id)` (redeemed, setup not started) and
+`await bot.active_member(user_id, team_id, timezone)` (set up through the real flow; the team
+needs a fixture under `fixtures/fpl/entry/`). `await bot.restart()` starts a fresh process on
+the same database and fakes, to test what survives in memory.
+
+Extending the harness: scheduled-job ticks belong in `BotHarness` (`advance` is where due jobs
+should run once the scheduler exists). `FakeTelegram._result` answers Bot API methods; add a case when the bot
 starts calling a new method whose result it reads.
 
 ## FPL fixtures
@@ -130,3 +139,8 @@ Add a revision under `src/fplbot/store/migrations/versions/` (hand-written or
 `DATABASE_URL=... uv run alembic revision --autogenerate -m "..."`), update `store/schema.py`, and
 give every new table a `season` column. Migrations must be backward-compatible with the previous
 image (ADR 0003): expand, then contract.
+
+CI enforces this with `uv run python -m fplbot.store.migration_check`: an `upgrade()` that drops
+or renames a table or column (Alembic ops or raw SQL) fails unless the module says
+`contract_step = True`. Write that contract migration only once no deployed image reads the old
+shape.

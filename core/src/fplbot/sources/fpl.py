@@ -23,7 +23,8 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, ClassVar, Protocol
+from enum import Enum
+from typing import Any, ClassVar, Literal, Protocol
 
 from fplbot.clock import Clock
 from fplbot.sources.limiter import Priority, RateLimiter
@@ -32,12 +33,15 @@ __all__ = [
     "FplBadData",
     "FplBlocked",
     "FplDown",
+    "FplEntry",
     "FplError",
+    "FplLeague",
     "FplResponse",
     "FplSource",
     "FplTransport",
     "FplUnexpectedStatus",
     "FplUpdating",
+    "Lookup",
     "PoliteFplClient",
     "Priority",
 ]
@@ -277,3 +281,68 @@ class FplSource:
             bootstrap: dict[str, Any] = data  # pyright: ignore[reportUnknownVariableType]
             cache.data, cache.fetched_at = bootstrap, now
             return bootstrap
+
+    async def entry(self, entry_id: int) -> FplEntry | Lookup:
+        """An FPL team. Fail-soft for interactive callers: FPL failing is
+        ``Lookup.UNAVAILABLE`` rather than an ``FplError``."""
+        try:
+            data = await self.get_json(f"entry/{entry_id}/")
+        except FplError:
+            return Lookup.UNAVAILABLE
+        if data is None:
+            return Lookup.NOT_FOUND
+        try:
+            return _entry(data)
+        except ValueError, KeyError, TypeError, AttributeError:
+            return Lookup.UNAVAILABLE
+
+
+class Lookup(Enum):
+    """Why a lookup returned no data."""
+
+    NOT_FOUND = "not_found"  # FPL answered 404: no such entry
+    UNAVAILABLE = "unavailable"  # FPL could not be reached or answered something unusable
+
+
+@dataclass(frozen=True)
+class FplLeague:
+    id: int
+    kind: Literal["classic", "h2h"]
+    name: str
+
+
+@dataclass(frozen=True)
+class FplEntry:
+    """An FPL team (``entry/{id}/``). The manager's name is for the "Is that you?" check only:
+    never store it."""
+
+    id: int
+    team_name: str
+    manager_first_name: str
+    manager_last_name: str
+    overall_rank: int | None
+    # Private classic and head-to-head leagues (Mini-leagues), in FPL's order.
+    mini_leagues: tuple[FplLeague, ...]
+
+
+# FPL's league_type: "x" is a private league; "s" a system one (Overall, countries, clubs...).
+_PRIVATE = "x"
+
+
+def _entry(data: dict[str, Any]) -> FplEntry:
+    leagues: dict[str, list[dict[str, Any]]] = data.get("leagues") or {}
+    mini_leagues = tuple(
+        FplLeague(int(league["id"]), kind, str(league["name"]))
+        for kind in ("classic", "h2h")
+        for league in leagues.get(kind) or []
+        if league.get("league_type") == _PRIVATE
+    )
+    rank = data.get("summary_overall_rank")
+    return FplEntry(
+        id=int(data["id"]),
+        team_name=str(data["name"]),
+        manager_first_name=str(data.get("player_first_name") or ""),
+        manager_last_name=str(data.get("player_last_name") or ""),
+        overall_rank=int(rank) if rank else None,
+        mini_leagues=mini_leagues,
+    )
