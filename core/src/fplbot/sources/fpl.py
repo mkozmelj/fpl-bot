@@ -538,7 +538,8 @@ def _fixtures(data: list[dict[str, Any]]) -> tuple[FplFixture, ...]:
 
 
 def _history(data: dict[str, Any]) -> FplHistory:
-    chips = {int(chip["event"]): str(chip["name"]) for chip in data.get("chips") or []}
+    played: list[dict[str, Any]] = data.get("chips") or []
+    chips = {int(chip["event"]): str(chip["name"]) for chip in played}
     return FplHistory(
         tuple(
             FplHistoryGameweek(

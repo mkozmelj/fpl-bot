@@ -47,7 +47,6 @@ class Deadlines:
     next: GameweekInfo | None
 
 
-
 class ReferenceStore:
     def __init__(self, engine: AsyncEngine, clock: Clock) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)

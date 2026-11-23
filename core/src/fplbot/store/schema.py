@@ -6,7 +6,17 @@ be backward-compatible with the previous image (ADR 0003: expand, then contract)
 
 from datetime import datetime, time
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Time, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Time,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -151,3 +161,19 @@ class MemberPick(Base):
     multiplier: Mapped[int] = mapped_column(Integer)
     is_captain: Mapped[bool] = mapped_column(Boolean)
     is_vice_captain: Mapped[bool] = mapped_column(Boolean)
+
+
+class WatchedFootballer(Base):
+    """One Footballer on a Member's Watch list (ticket 29). ``footballer_id`` is FPL's element id,
+    which FPL renumbers every season, so a row only counts in its own ``season``."""
+
+    __tablename__ = "watch_list"
+    __table_args__ = (UniqueConstraint("member_id", "season", "footballer_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    season: Mapped[str] = mapped_column(String(7))
+    member_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("members.id", ondelete="CASCADE"), index=True
+    )
+    footballer_id: Mapped[int] = mapped_column(Integer)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
