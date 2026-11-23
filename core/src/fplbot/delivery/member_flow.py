@@ -33,8 +33,10 @@ from fplbot.clock import Clock
 from fplbot.delivery import texts
 from fplbot.delivery.messages import Button, Reply
 from fplbot.delivery.timezones import BUTTON_ZONES, resolve_timezone
+from fplbot.sources.footballer_search import Footballer, footballers_in, search
 from fplbot.sources.fpl import FplEntry, FplLeague, FplSource, Lookup
 from fplbot.store.members import Goal, GoalLeague, MemberRecord, MemberStore
+from fplbot.store.watch_list import Added, WatchListStore
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +44,8 @@ _TEAM_ID = re.compile(r"\d{1,9}")
 _ALERT_TIME = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
 # Commands a Member still in setup may use.
 _SETUP_COMMANDS = ("/start", "/leave")
+# An ambiguous name offers one button per match, up to this many.
+_MAX_WATCH_CHOICES = 8
 
 
 class Step(StrEnum):
@@ -54,6 +58,7 @@ class Step(StrEnum):
     TZ = "tz"
     TZ_TEXT = "tz_text"
     CONFIRM_LEAVE = "confirm_leave"
+    WATCH_PICK = "watch_pick"
 
 
 @dataclass
@@ -64,12 +69,14 @@ class ChatState:
     # Pending data for the open question.
     team: FplEntry | None = None
     leagues: dict[str, FplLeague] = field(default_factory=dict[str, FplLeague])
+    footballers: dict[str, Footballer] = field(default_factory=dict[str, Footballer])
 
     def clear(self) -> None:
         self.step = None
         self.keyboard = None
         self.team = None
         self.leagues = {}
+        self.footballers = {}
 
 
 @dataclass
@@ -100,8 +107,11 @@ type StepHandler = Callable[[Turn, str], Awaitable[None]]
 
 
 class MemberFlow:
-    def __init__(self, *, members: MemberStore, fpl: FplSource, clock: Clock) -> None:
+    def __init__(
+        self, *, members: MemberStore, watch_list: WatchListStore, fpl: FplSource, clock: Clock
+    ) -> None:
         self._members = members
+        self._watch_list = watch_list
         self._fpl = fpl
         self._clock = clock
         self._states: dict[int, ChatState] = {}
@@ -114,6 +124,7 @@ class MemberFlow:
             "/tz": self._tz,
             "/time": self._time,
             "/leave": self._leave,
+            "/watch": self._watch,
         }
         self._text_steps: dict[Step, StepHandler] = {
             Step.TEAM_ID: self._on_team_id,
@@ -125,6 +136,7 @@ class MemberFlow:
             Step.LEAGUE: self._on_league,
             Step.TZ: self._on_tz,
             Step.CONFIRM_LEAVE: self._on_confirm_leave,
+            Step.WATCH_PICK: self._on_watch_pick,
         }
 
     async def begin(self, member: MemberRecord) -> list[Reply]:
@@ -326,7 +338,12 @@ class MemberFlow:
         turn.say(texts.CANCELLED)
 
     async def _settings(self, turn: Turn, argument: str) -> None:
-        turn.say(_summary(turn.member))
+        watched = await self._watch_list.footballer_ids(turn.member.chat_id, self._clock.now())
+        names: list[str] | None = []
+        if watched:
+            footballers = await self._footballers()
+            names = None if footballers is None else _names(watched, footballers)
+        turn.say(f"{_summary(turn.member)}\n{texts.settings_watch_list(names, len(watched))}")
 
     async def _goal(self, turn: Turn, argument: str) -> None:
         self._ask_goal(turn)
@@ -360,6 +377,113 @@ class MemberFlow:
             [[("yes", texts.LEAVE_YES), ("no", texts.LEAVE_NO)]],
         )
 
+    # --- Watch list ---
+
+    async def _watch(self, turn: Turn, argument: str) -> None:
+        action, _, typed = argument.partition(" ")
+        action, typed = action.lower(), typed.strip()
+        if not argument:
+            await self._show_watch_list(turn)
+        elif action == "add" and typed:
+            await self._watch_add(turn, typed)
+        elif action == "remove" and typed:
+            await self._watch_remove(turn, typed)
+        else:
+            turn.say(texts.WATCH_USAGE)
+
+    async def _show_watch_list(self, turn: Turn) -> None:
+        watched = await self._watch_list.footballer_ids(turn.member.chat_id, self._clock.now())
+        if not watched:
+            turn.say(texts.WATCH_EMPTY)
+            return
+        footballers = await self._footballers()
+        if footballers is None:
+            turn.say(texts.FPL_UNREACHABLE)
+            return
+        turn.say(
+            texts.watch_list(
+                [
+                    texts.watch_line(f.name, f.club, f.position, f.price)
+                    for f in (footballers[i] for i in watched if i in footballers)
+                ]
+            )
+        )
+
+    async def _watch_add(self, turn: Turn, typed: str) -> None:
+        footballers = await self._footballers()
+        if footballers is None:
+            turn.say(texts.FPL_UNREACHABLE)
+            return
+        matches = search(footballers.values(), typed)
+        if not matches:
+            turn.say(texts.watch_no_match(typed))
+        elif len(matches) == 1:
+            await self._add_to_watch_list(turn, matches[0])
+        elif len(matches) > _MAX_WATCH_CHOICES:
+            turn.say(texts.watch_too_many(len(matches), typed))
+        else:
+            turn.state.footballers = {str(f.id): f for f in matches}
+            turn.ask(
+                Step.WATCH_PICK,
+                texts.watch_ambiguous(typed),
+                [
+                    [(key, texts.watch_choice(f.name, f.club, f.position))]
+                    for key, f in turn.state.footballers.items()
+                ],
+            )
+
+    async def _on_watch_pick(self, turn: Turn, choice: str) -> None:
+        footballer = turn.state.footballers.get(choice)
+        turn.state.footballers = {}
+        if footballer is None:
+            turn.say(texts.STALE_BUTTON)
+            return
+        await self._add_to_watch_list(turn, footballer)
+
+    async def _add_to_watch_list(self, turn: Turn, footballer: Footballer) -> None:
+        added = await self._watch_list.add(turn.member.chat_id, footballer.id, self._clock.now())
+        if added is Added.ALREADY_THERE:
+            turn.say(texts.watch_already(footballer.name))
+        elif added is Added.FULL:
+            turn.say(texts.WATCH_FULL)
+        else:
+            log.info("member %d added a Footballer to their Watch list", turn.member.number)
+            turn.say(
+                texts.watch_added(
+                    footballer.name, footballer.club, footballer.position, footballer.price
+                )
+            )
+
+    async def _watch_remove(self, turn: Turn, typed: str) -> None:
+        now = self._clock.now()
+        watched = await self._watch_list.footballer_ids(turn.member.chat_id, now)
+        if not watched:
+            turn.say(texts.watch_not_there(typed))
+            return
+        footballers = await self._footballers()
+        if footballers is None:
+            turn.say(texts.FPL_UNREACHABLE)
+            return
+        matches = search((footballers[i] for i in watched if i in footballers), typed)
+        if not matches:
+            turn.say(texts.watch_not_there(typed))
+            return
+        await self._watch_list.remove(turn.member.chat_id, matches[0].id, now)
+        log.info("member %d removed a Footballer from their Watch list", turn.member.number)
+        turn.say(texts.watch_removed(matches[0].name))
+
+    async def _footballers(self) -> dict[int, Footballer] | None:
+        """This season's Footballers by id, from ``bootstrap-static``; ``None`` if FPL can't be
+        reached or answers something unusable."""
+        bootstrap = await self._fpl.bootstrap_static()
+        if bootstrap is None:
+            return None
+        try:
+            return footballers_in(bootstrap)
+        except KeyError, TypeError, ValueError:
+            log.warning("bootstrap-static has an unexpected shape")
+            return None
+
     async def _unknown_command(self, turn: Turn, argument: str) -> None:
         turn.say(texts.UNKNOWN_COMMAND)
 
@@ -375,6 +499,10 @@ def _summary(member: MemberRecord) -> str:
         timezone=member.timezone or "not set",
         alert_time=_hhmm(member.alert_time),
     )
+
+
+def _names(ids: Sequence[int], footballers: dict[int, Footballer]) -> list[str]:
+    return [footballers[i].name for i in ids if i in footballers]
 
 
 def _manager(entry: FplEntry) -> str:

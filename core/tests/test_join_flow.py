@@ -27,6 +27,9 @@ ASK_TZ = (
 )
 TZ_BUTTONS = ["Europe/London", "Europe/Paris", "America/New_York", "Asia/Kolkata"]
 HELP = (
+    "/watch  show your Watch list\n"
+    "/watch add <name>\n"
+    "/watch remove <name>\n"
     "/goal  switch Goal\n"
     "/time HH:MM  Price alert time\n"
     "/tz  change timezone\n"
@@ -196,7 +199,8 @@ async def test_a_typed_timezone_and_alert_time(bot: BotHarness) -> None:
     assert alice.replies[-3:] == [
         "Done. Price alerts at 19:30 Europe/Ljubljana time.",
         "Use 24-hour time, like /time 19:30.",
-        settings("Alex's Aces (ID 1001)", "Overall rank", "Europe/Ljubljana", alert="19:30"),
+        settings("Alex's Aces (ID 1001)", "Overall rank", "Europe/Ljubljana", alert="19:30")
+        + "\nWatch list: empty",
     ]
 
 

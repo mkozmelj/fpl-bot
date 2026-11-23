@@ -21,6 +21,7 @@ from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
 from fplbot.sources.fpl import FplSource, FplTransport
 from fplbot.store.db import create_engine
 from fplbot.store.members import MemberStore
+from fplbot.store.watch_list import WatchListStore
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ class FplBotApp:
             Conversation(
                 owner_id=config.owner_telegram_id,
                 members=self.members,
+                watch_list=WatchListStore(self.engine),
                 fpl=self.fpl,
                 clock=self.clock,
             ),
