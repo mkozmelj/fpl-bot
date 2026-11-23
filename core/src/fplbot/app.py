@@ -14,11 +14,14 @@ from telegram.ext import Application
 from telegram.request import BaseRequest
 
 from fplbot.clock import Clock, SystemClock
-from fplbot.config import Config, ConfigError
+from fplbot.config import Config
 from fplbot.delivery import telegram
 from fplbot.delivery.conversation import Conversation
+from fplbot.delivery.owner_alerts import OwnerAlerts
+from fplbot.jobs.runner import JobRunner
 from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
-from fplbot.sources.fpl import FplSource, FplTransport
+from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient, Priority
+from fplbot.sources.live import HttpxFplTransport
 from fplbot.store.db import create_engine
 from fplbot.store.members import MemberStore
 
@@ -37,7 +40,11 @@ class FplBotApp:
         self.clock: Clock = clock or SystemClock()
         self.engine = create_engine(config.database_url)
         self.members = MemberStore(self.engine)
-        self.fpl = FplSource(fpl_transport or _fpl_transport_for(config))
+        self._live_fpl: HttpxFplTransport | None = None
+        if fpl_transport is None:
+            fpl_transport = self._fpl_transport_for(config)
+        # Every FPL request in the process goes through this one client (one rate limit).
+        self.fpl = FplSource(PoliteFplClient(fpl_transport, self.clock))
 
         builder = Application.builder().token(config.telegram_bot_token)
         if telegram_request is not None:
@@ -48,18 +55,37 @@ class FplBotApp:
             Conversation(
                 owner_id=config.owner_telegram_id,
                 members=self.members,
-                fpl=self.fpl,
+                fpl=self.fpl.with_priority(Priority.INTERACTIVE),
                 clock=self.clock,
             ),
         )
+
+        owner_id = config.owner_telegram_id
+
+        async def send_to_owner(text: str) -> None:
+            await self.telegram.bot.send_message(owner_id, text)
+
+        self.owner_alerts = OwnerAlerts(send_to_owner, self.clock)
+        self.jobs = JobRunner(self.fpl, self.owner_alerts)
+
+    def _fpl_transport_for(self, config: Config) -> FplTransport:
+        if config.fpl_source == "fake":
+            return FakeFplTransport(config.fpl_fixtures_dir or DEFAULT_FIXTURES_DIR, self.clock)
+        self._live_fpl = HttpxFplTransport()
+        return self._live_fpl
 
     async def __aenter__(self) -> Self:
         await self.telegram.initialize()
         return self
 
     async def __aexit__(self, *exc_info: object) -> None:
+        for task in list(self.jobs.running):
+            task.cancel()
+        await asyncio.gather(*self.jobs.running, return_exceptions=True)
         await self.telegram.shutdown()
         await self.engine.dispose()
+        if self._live_fpl is not None:
+            await self._live_fpl.aclose()
 
     async def feed(self, update_data: dict[str, Any]) -> None:
         """Process one Telegram update (Bot API JSON) to completion."""
@@ -79,9 +105,3 @@ class FplBotApp:
         finally:
             await updater.stop()
             await self.telegram.stop()
-
-
-def _fpl_transport_for(config: Config) -> FplTransport:
-    if config.fpl_source == "fake":
-        return FakeFplTransport(config.fpl_fixtures_dir or DEFAULT_FIXTURES_DIR)
-    raise ConfigError("the live FPL source is not built yet (ticket 27); set FPL_SOURCE=fake")

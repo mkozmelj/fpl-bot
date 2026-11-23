@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "headers": {"content-type": "application/json"},
+  "json": {
+    "events": [
+      {"id": 2, "name": "Gameweek 2", "is_current": true}
+    ],
+    "teams": [
+      {"id": 1, "name": "Northbridge"}
+    ]
+  }
+}

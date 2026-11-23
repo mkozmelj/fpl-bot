@@ -14,10 +14,10 @@
 
 **Status:** ready-for-agent
 
-- [ ] Through the seam with a fake clock: a burst of FPL-bound work never exceeds 1 request a second, and interactive work overtakes queued low-priority work.
-- [ ] A 429 with Retry-After is retried after that delay; a 5xx is retried with growing jittered delays and gives up after 5 tries.
-- [ ] A 403 is never retried and produces exactly one owner DM with a fixed code; the next run of that job that succeeds produces one "recovered" DM.
-- [ ] A second consecutive failure of a job DMs the owner; a third does not DM again within 6 hours.
-- [ ] Every outgoing request carries the generic User-Agent and nothing identifying.
-- [ ] Raw FPL responses are never written to the database.
-- [ ] Fixtures exist for 503 "updating", 403, 429 and missing fields.
+- [x] Through the seam with a fake clock: a burst of FPL-bound work never exceeds 1 request a second, and interactive work overtakes queued low-priority work.
+- [x] A 429 with Retry-After is retried after that delay; a 5xx is retried with growing jittered delays and gives up after 5 tries.
+- [x] A 403 is never retried and produces exactly one owner DM with a fixed code; the next run of that job that succeeds produces one "recovered" DM.
+- [x] A second consecutive failure of a job DMs the owner; a third does not DM again within 6 hours.
+- [x] Every outgoing request carries the generic User-Agent and nothing identifying.
+- [x] Raw FPL responses are never written to the database.
+- [x] Fixtures exist for 503 "updating", 403, 429 and missing fields.
