@@ -35,6 +35,9 @@ from fplbot.delivery.messages import Button, Reply
 from fplbot.delivery.timezones import BUTTON_ZONES, resolve_timezone
 from fplbot.sources.fpl import FplEntry, FplLeague, FplSource, Lookup
 from fplbot.store.members import Goal, GoalLeague, MemberRecord, MemberStore
+from fplbot.store.reference import Deadlines, ReferenceStore
+from fplbot.store.seasons import season_of
+from fplbot.store.squads import Squad, SquadPick, SquadStore
 
 log = logging.getLogger(__name__)
 
@@ -97,19 +100,34 @@ class Turn:
 
 type CommandHandler = Callable[[Turn, str], Awaitable[None]]
 type StepHandler = Callable[[Turn, str], Awaitable[None]]
+# Called with (Member number, team ID) once a Member has linked their team: starts the backfill.
+type TeamLinked = Callable[[int, int], None]
 
 
 class MemberFlow:
-    def __init__(self, *, members: MemberStore, fpl: FplSource, clock: Clock) -> None:
+    def __init__(
+        self,
+        *,
+        members: MemberStore,
+        fpl: FplSource,
+        clock: Clock,
+        reference: ReferenceStore,
+        squads: SquadStore,
+        on_team_linked: TeamLinked,
+    ) -> None:
         self._members = members
         self._fpl = fpl
         self._clock = clock
+        self._reference = reference
+        self._squads = squads
+        self._on_team_linked = on_team_linked
         self._states: dict[int, ChatState] = {}
         self._commands: dict[str, CommandHandler] = {
             "/start": self._start,
             "/help": self._help,
             "/cancel": self._cancel,
             "/settings": self._settings,
+            "/squad": self._squad,
             "/goal": self._goal,
             "/tz": self._tz,
             "/time": self._time,
@@ -244,6 +262,7 @@ class MemberFlow:
             turn.state.step = Step.TEAM_ID
             return
         log.info("member %d linked a team", turn.member.number)
+        self._on_team_linked(turn.member.number, team.id)
         await self._advance(turn)
 
     async def _on_goal(self, turn: Turn, choice: str) -> None:
@@ -328,6 +347,21 @@ class MemberFlow:
     async def _settings(self, turn: Turn, argument: str) -> None:
         turn.say(_summary(turn.member))
 
+    async def _squad(self, turn: Turn, argument: str) -> None:
+        await self._reference.refresh_if_stale(self._fpl)  # fail-soft: else use what's stored
+        now = self._clock.now()
+        deadlines = await self._reference.deadlines(now)
+        last = deadlines.last
+        if last is None:
+            turn.say(texts.NO_DEADLINE_YET if deadlines.next else texts.FPL_UNREACHABLE)
+            return
+        hidden = _picks_hidden_note(deadlines, turn.member.timezone)
+        squad = await self._squads.squad(turn.member.number, season_of(now), last.id)
+        if squad is None:
+            turn.say(texts.no_squad(last.id, hidden))
+            return
+        turn.say(_squad_text(turn.member.team_name or "", squad, hidden))
+
     async def _goal(self, turn: Turn, argument: str) -> None:
         self._ask_goal(turn)
 
@@ -375,6 +409,41 @@ def _summary(member: MemberRecord) -> str:
         timezone=member.timezone or "not set",
         alert_time=_hhmm(member.alert_time),
     )
+
+
+_POSITION_ORDER = ("GKP", "DEF", "MID", "FWD")
+
+
+def _squad_text(team_name: str, squad: Squad, hidden_note: str | None) -> str:
+    # "?": a Footballer missing from reference data (e.g. added after the last refresh).
+    lines = [
+        (position, [_pick_label(p) for p in squad.xi if (p.position or "?") == position])
+        for position in (*_POSITION_ORDER, "?")
+    ]
+    return texts.squad(
+        team_name,
+        squad.gameweek,
+        [(position, names) for position, names in lines if names],
+        [_pick_label(p) for p in squad.bench],
+        hidden_note,
+    )
+
+
+def _pick_label(pick: SquadPick) -> str:
+    if pick.is_captain:
+        return texts.captain(pick.name)
+    if pick.is_vice_captain:
+        return texts.vice_captain(pick.name)
+    return pick.name
+
+
+def _picks_hidden_note(deadlines: Deadlines, timezone: str | None) -> str | None:
+    """Between deadlines: which Gameweek's picks FPL still hides, and until when."""
+    if deadlines.next is None or deadlines.last is None:
+        return None
+    zone = ZoneInfo(timezone or "Europe/London")
+    local = deadlines.next.deadline.astimezone(zone).strftime("%a %d %b %H:%M")
+    return texts.picks_hidden(deadlines.next.id, local, deadlines.last.id)
 
 
 def _manager(entry: FplEntry) -> str:
