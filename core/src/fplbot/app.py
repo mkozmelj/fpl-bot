@@ -21,12 +21,20 @@ from fplbot.delivery.owner_alerts import OwnerAlerts
 from fplbot.delivery.owner_chat import TelegramOwnerChat
 from fplbot.jobs.backfill import JOB_NAME as BACKFILL_JOB
 from fplbot.jobs.backfill import backfill_member
-from fplbot.jobs.member_backup import MemberBackup
+from fplbot.jobs.member_backup import (
+    MEMBER_BACKUP_AT,
+    MEMBER_BACKUP_JOB,
+    MEMBER_BACKUP_ZONE,
+    MemberBackup,
+)
+from fplbot.jobs.post_deadline import PostDeadline
 from fplbot.jobs.price_alert import PriceAlerts
 from fplbot.jobs.runner import JobRunner
+from fplbot.jobs.scheduler import Scheduler, daily
 from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
 from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient, Priority
 from fplbot.sources.live import HttpxFplTransport
+from fplbot.store.completions import CompletionStore
 from fplbot.store.db import create_engine
 from fplbot.store.members import MemberStore
 from fplbot.store.reference import ReferenceStore
@@ -82,6 +90,7 @@ class FplBotApp:
                 reference=self.reference,
                 squads=self.squads,
                 on_team_linked=on_team_linked,
+                on_settings_changed=lambda: self.scheduler.rebuild(),
             ),
         )
 
@@ -113,6 +122,22 @@ class FplBotApp:
             send=send_to_member,
         )
 
+        # Scheduled jobs: each feature adds a planner (see jobs/scheduler.py).
+        self.completions = CompletionStore(self.engine)
+        self.scheduler = Scheduler(self.clock, self.jobs)
+        self.post_deadline = PostDeadline(
+            clock=self.clock,
+            members=self.members,
+            reference=self.reference,
+            squads=self.squads,
+            completions=self.completions,
+        )
+        self.scheduler.add(self.post_deadline.plan)
+        self.scheduler.add(self.price_alerts.plan)
+        self.scheduler.add(
+            daily(MEMBER_BACKUP_JOB, self.member_backup.run, MEMBER_BACKUP_AT, MEMBER_BACKUP_ZONE)
+        )
+
     def _fpl_transport_for(self, config: Config) -> FplTransport:
         if config.fpl_source == "fake":
             return FakeFplTransport(config.fpl_fixtures_dir or DEFAULT_FIXTURES_DIR, self.clock)
@@ -123,7 +148,12 @@ class FplBotApp:
         await self.telegram.initialize()
         return self
 
+    def start_scheduling(self) -> None:
+        """Start scheduled jobs: the startup refresh and catch-up, then the plan."""
+        self.scheduler.start()
+
     async def __aexit__(self, *exc_info: object) -> None:
+        await self.scheduler.stop()
         for task in list(self.jobs.running):
             task.cancel()
         await asyncio.gather(*self.jobs.running, return_exceptions=True)
@@ -140,6 +170,7 @@ class FplBotApp:
     async def serve(self, stop: asyncio.Event) -> None:
         """Long-poll Telegram until ``stop`` is set."""
         await self.telegram.start()
+        self.start_scheduling()
         updater = self.telegram.updater
         if updater is None:
             raise RuntimeError("the Telegram application was built without an updater")

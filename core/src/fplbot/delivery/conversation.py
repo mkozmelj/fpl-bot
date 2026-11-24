@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from fplbot.clock import Clock
 from fplbot.delivery import texts
-from fplbot.delivery.member_flow import MemberFlow, TeamLinked
+from fplbot.delivery.member_flow import MemberFlow, SettingsChanged, TeamLinked
 from fplbot.delivery.messages import Button, Incoming, Press, Reply
 from fplbot.delivery.rate_limit import AttemptLimiter
 from fplbot.sources.fpl import FplSource
@@ -43,6 +43,7 @@ class Conversation:
         reference: ReferenceStore,
         squads: SquadStore,
         on_team_linked: TeamLinked,
+        on_settings_changed: SettingsChanged = lambda: None,
     ) -> None:
         self._owner_id = owner_id
         self._members = members
@@ -56,6 +57,7 @@ class Conversation:
             reference=reference,
             squads=squads,
             on_team_linked=on_team_linked,
+            on_settings_changed=on_settings_changed,
         )
 
     async def respond(self, message: Incoming, bot_username: str) -> list[Reply]:

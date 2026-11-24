@@ -122,6 +122,16 @@ class MemberStore:
             member = await session.scalar(select(Member).where(Member.chat_id == chat_id))
             return None if member is None else _record(member)
 
+    async def linked_teams(self) -> list[tuple[int, int]]:
+        """``(Member number, FPL team ID)`` of every Member with a linked team."""
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(Member.id, Member.team_id)
+                .where(Member.team_id.is_not(None))
+                .order_by(Member.id)
+            )
+            return [(number, team_id) for number, team_id in rows.tuples() if team_id is not None]
+
     async def active(self) -> list[MemberRecord]:
         """Every Member who finished setup, by Member number."""
         async with self._sessions() as session:

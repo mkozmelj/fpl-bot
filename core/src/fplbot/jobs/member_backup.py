@@ -9,8 +9,8 @@ backup is a new message; after that, each backup overwrites the message holding 
 (``editMessageMedia``), so the older backup is gone. If the owner deleted that message by hand,
 a new message is sent instead.
 
-Scheduling (ticket 31): run ``app.member_backup.run`` as job ``MEMBER_BACKUP_JOB`` through
-``app.jobs`` once a day at ``MEMBER_BACKUP_AT`` UK time (``MEMBER_BACKUP_ZONE``), priority
+Scheduling (ticket 31): ``app.py`` registers ``daily(MEMBER_BACKUP_JOB, ..., MEMBER_BACKUP_AT,
+MEMBER_BACKUP_ZONE)`` with the scheduler: once a day at 04:00 UK time, priority
 ``Priority.ROUTINE``. It makes no FPL requests.
 """
 
