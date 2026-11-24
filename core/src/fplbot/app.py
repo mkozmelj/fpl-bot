@@ -18,8 +18,10 @@ from fplbot.config import Config
 from fplbot.delivery import telegram
 from fplbot.delivery.conversation import Conversation
 from fplbot.delivery.owner_alerts import OwnerAlerts
+from fplbot.delivery.owner_chat import TelegramOwnerChat
 from fplbot.jobs.backfill import JOB_NAME as BACKFILL_JOB
 from fplbot.jobs.backfill import backfill_member
+from fplbot.jobs.member_backup import MemberBackup
 from fplbot.jobs.runner import JobRunner
 from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
 from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient, Priority
@@ -89,6 +91,13 @@ class FplBotApp:
 
         self.owner_alerts = OwnerAlerts(send_to_owner, self.clock)
         self.jobs = JobRunner(self.fpl, self.owner_alerts)
+        # Nightly job (ticket 39); ticket 31 schedules it, see jobs/member_backup.py.
+        self.member_backup = MemberBackup(
+            self.engine,
+            config.backup_public_key,
+            TelegramOwnerChat(self.telegram.bot, owner_id),
+            self.clock,
+        )
 
     def _fpl_transport_for(self, config: Config) -> FplTransport:
         if config.fpl_source == "fake":

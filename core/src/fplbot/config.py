@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+import pyrage
+
 FplSourceKind = Literal["live", "fake"]
 
 
@@ -24,6 +26,9 @@ class Config:
     # "fake" serves recorded fixtures from ``fpl_fixtures_dir`` instead of calling FPL.
     fpl_source: FplSourceKind = "live"
     fpl_fixtures_dir: Path | None = None
+    # The age public key (``age1...``) the nightly Member backup is encrypted to; its private
+    # key lives only in the owner's password manager. None: no backup, and the owner is told.
+    backup_public_key: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Config:
@@ -41,6 +46,15 @@ class Config:
         if source not in ("live", "fake"):
             raise ConfigError("FPL_SOURCE must be 'live' or 'fake'")
 
+        backup_key = env.get("BACKUP_AGE_PUBLIC_KEY", "").strip() or None
+        if backup_key is not None:
+            try:
+                pyrage.x25519.Recipient.from_str(backup_key)
+            except pyrage.RecipientError:
+                raise ConfigError(
+                    "BACKUP_AGE_PUBLIC_KEY must be an age public key (age1...)"
+                ) from None
+
         fixtures = env.get("FPL_FIXTURES_DIR", "").strip()
         return cls(
             telegram_bot_token=required("TELEGRAM_BOT_TOKEN"),
@@ -48,4 +62,5 @@ class Config:
             owner_telegram_id=int(owner),
             fpl_source="fake" if source == "fake" else "live",
             fpl_fixtures_dir=Path(fixtures) if fixtures else None,
+            backup_public_key=backup_key,
         )
