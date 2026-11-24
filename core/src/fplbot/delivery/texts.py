@@ -323,3 +323,47 @@ def settings_watch_list(names: list[str] | None, count: int) -> str:
     if names is None:
         return f"Watch list: {count} Footballers"
     return "Watch list: " + ", ".join(names)
+
+
+# --- Owner /status, startup and usage warnings (ticket 38) ---
+
+STATUS_TITLE = "Status"
+STATUS_COMPLETIONS = "Last completed:"
+NEON_REACHABLE = "Neon: reachable"
+NEON_UNREACHABLE = "Neon: unreachable"
+COMPUTE_HOURS_UNREADABLE = (
+    "Compute hours: not readable without a Neon API key; see the Neon console."
+)
+
+
+def deploy_version(version: str, sha: str) -> str:
+    return f"v{version} ({sha[:7]})"
+
+
+def status_uptime(uptime: str, version: str) -> str:
+    return f"Up {uptime} · {version}"
+
+
+def status_completion(job: str, period: str | None, at: datetime | None) -> str:
+    if period is None or at is None:
+        return f"• {job}: never"
+    return f"• {job}: {period}, {at:%d %b %H:%M} UTC"
+
+
+def status_completion_unknown(job: str) -> str:
+    return f"• {job}: unknown"
+
+
+def database_size(size_mb: float, limit_mb: int, percent: int) -> str:
+    return f"Database size: {size_mb:.1f} MB of {limit_mb} MB ({percent}%)"
+
+
+def online(version: str) -> str:
+    return f"online {version}"
+
+
+def storage_warning(size_mb: float, limit_mb: int, percent: int) -> str:
+    return (
+        f"Neon storage is at {percent}% ({size_mb:.1f} MB of {limit_mb} MB). Check which tables "
+        "grew before the next Gameweek (docs/runbook-secrets.md, Monthly Neon check)."
+    )
