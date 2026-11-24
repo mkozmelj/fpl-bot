@@ -67,10 +67,19 @@ class Scheduler:
         """Register a feature's planner. Do it before ``start``."""
         self._planners.append(planner)
 
+    def remove(self, planner: Planner) -> None:
+        """Unregister a planner (before ``start``), e.g. a test leaving a feature out."""
+        self._planners.remove(planner)
+
     @property
     def tasks(self) -> set[asyncio.Task[None]]:
         """The scheduler's own task while it runs (the test harness settles it)."""
         return {self._loop} if self._loop is not None and not self._loop.done() else set()
+
+    @property
+    def running(self) -> bool:
+        """Whether the scheduler's loop is alive (started, not stopped, not crashed)."""
+        return not self._stopped and self._loop is not None and not self._loop.done()
 
     def start(self) -> None:
         self._stopped = False

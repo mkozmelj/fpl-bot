@@ -317,6 +317,43 @@ def price_alert_failed(code: str, job: str) -> str:
     return f"{owner_alert(code, job)} Tonight's Price alerts were not sent."
 
 
+# --- /accuracy (ticket 37): owner only ---
+
+ACCURACY_EMPTY = (
+    "Price predictor accuracy: nothing scored yet. A night's codes are scored once its 00:10 "
+    "price-change archive is stored."
+)
+ACCURACY_HIT = "A hit: a + code rose, a - code fell, 0 stayed."
+ACCURACY_TOTAL = "All"
+ACCURACY_MANUAL = "Raise the alert threshold by hand if it persists; nothing changes by itself."
+
+
+def accuracy_header(season: str) -> str:
+    return f"Price predictor accuracy · {season}"
+
+
+def accuracy_section(tomorrow: bool, nights: int) -> str:
+    horizon = "Tomorrow night's code" if tomorrow else "Tonight's code"
+    return f"{horizon} · last {nights} nights · season"
+
+
+def accuracy_line(code: str, recent: str, season: str) -> str:
+    return f"{code}  {recent} · {season}"
+
+
+def accuracy_tally(hits: int, predictions: int, percent: int | None) -> str:
+    return "no data" if percent is None else f"{hits}/{predictions} {percent}%"
+
+
+def accuracy_floors_met(nights: int, minimum: int) -> str:
+    return f"Floors (±4 70%, ±5 85%; last {nights} nights, {minimum}+ predictions a code): all met."
+
+
+def accuracy_breach(tomorrow: bool, code: str, tally: str, floor: int) -> str:
+    horizon = "tomorrow night's" if tomorrow else "tonight's"
+    return f"Below floor: {horizon} {code} at {tally} (floor {floor}%)."
+
+
 def settings_watch_list(names: list[str] | None, count: int) -> str:
     """The /settings line. ``names`` is ``None`` when FPL can't be reached for them."""
     if count == 0:
@@ -366,3 +403,47 @@ def league_leader(points: int) -> str:
 
 def league_h2h_opponent(gameweek: int, team_name: str | None) -> str:
     return f"GW{gameweek} opponent: {team_name}" if team_name else f"GW{gameweek}: a bye"
+
+
+# --- Owner /status, startup and usage warnings (ticket 38) ---
+
+STATUS_TITLE = "Status"
+STATUS_COMPLETIONS = "Last completed:"
+NEON_REACHABLE = "Neon: reachable"
+NEON_UNREACHABLE = "Neon: unreachable"
+COMPUTE_HOURS_UNREADABLE = (
+    "Compute hours: not readable without a Neon API key; see the Neon console."
+)
+
+
+def deploy_version(version: str, sha: str) -> str:
+    return f"v{version} ({sha[:7]})"
+
+
+def status_uptime(uptime: str, version: str) -> str:
+    return f"Up {uptime} · {version}"
+
+
+def status_completion(job: str, period: str | None, at: datetime | None) -> str:
+    if period is None or at is None:
+        return f"• {job}: never"
+    return f"• {job}: {period}, {at:%d %b %H:%M} UTC"
+
+
+def status_completion_unknown(job: str) -> str:
+    return f"• {job}: unknown"
+
+
+def database_size(size_mb: float, limit_mb: int, percent: int) -> str:
+    return f"Database size: {size_mb:.1f} MB of {limit_mb} MB ({percent}%)"
+
+
+def online(version: str) -> str:
+    return f"online {version}"
+
+
+def storage_warning(size_mb: float, limit_mb: int, percent: int) -> str:
+    return (
+        f"Neon storage is at {percent}% ({size_mb:.1f} MB of {limit_mb} MB). Check which tables "
+        "grew before the next Gameweek (docs/runbook-secrets.md, Monthly Neon check)."
+    )

@@ -173,3 +173,13 @@ async def test_the_backup_runs_by_itself_every_night_at_04_00_uk_time(bot: BotHa
     assert sorted(d.caption or "" for d in bot.owner.documents) == [
         caption_on(day).replace("18:00", "04:00") for day in (20, 21)
     ]
+
+
+async def test_a_restart_just_after_04_00_does_not_send_the_backup_again(bot: BotHarness) -> None:
+    await bot.start_scheduling()  # Thu 19 Nov 18:00 UTC
+    await bot.advance(timedelta(hours=10, minutes=2))  # Fri 04:02: the backup has gone out
+
+    await bot.restart()  # inside the run's grace window: the scheduler fires it again
+    await bot.advance(timedelta(minutes=30))
+
+    assert [d.caption for d in bot.owner.documents] == [caption_on(20).replace("18:00", "04:00")]

@@ -13,6 +13,7 @@ Railway, the GitHub Environment and the owner's password manager.
 | `OWNER_TELEGRAM_ID` | Railway sealed variable (not secret, kept with the others) | the bot |
 | `ANTHROPIC_API_KEY` (optional, not used in Phase 1) | Railway sealed variable | the bot |
 | `BACKUP_AGE_PUBLIC_KEY` (backup `age` public key, `age1...`) | Railway variable (public, not secret) | the nightly backup |
+| `HEARTBEAT_URL` (optional, the uptime monitor's ping URL) | Railway sealed variable | the heartbeat |
 | Backup `age` private key | owner's password manager only | the restore drill |
 | Railway project token (production environment) | GitHub Environment `production`, restricted to `main` | the deploy job; the **only** CI secret |
 
@@ -111,7 +112,8 @@ never production.
    `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/fplbot_restore uv run python -m fplbot migrate`
    (from `core/`).
 5. Load the export: `psql -h localhost -U postgres -d fplbot_restore -f members.sql`.
-6. Check: the Member count matches `/status`, and a known Member's Goal and Watch list are present.
+6. Check: the Member count matches the backup's caption, and a known Member's Goal and Watch list
+   are present.
 7. Drop the scratch database and delete `members.sql`.
 
 For a real restore into Neon, create a new Neon branch first, restore into it, point
@@ -119,6 +121,12 @@ For a real restore into Neon, create a new Neon branch first, restore into it, p
 aggregates), which are not in the backup and rely on Neon's own short restore window.
 
 ## Monthly Neon check
+
+The bot DMs the owner once when its database passes 70% of the storage limit (checked daily at
+04:30 UK; `pg_database_size`, a little below what Neon bills). The limit is
+`DATABASE_STORAGE_LIMIT_MB` (default 1024, Neon Free); set it if the plan changes. `/status` shows
+the same size. Compute hours are readable only through the Neon API, which needs a key the bot
+does not hold, so there is no automatic compute-hours DM: this monthly check covers it.
 
 On the first weekend of each month, in the Neon console:
 
@@ -132,8 +140,11 @@ Also glance at the Railway usage and its alert, and the Anthropic workspace spen
 
 ## `HEARTBEAT_URL`
 
-The bot pings this URL every 5 minutes while its event loop and scheduler are healthy. The ping
-never touches the database and carries no Member data.
+The bot pings this URL (a plain `GET`) every 5 minutes while its event loop and scheduler are
+healthy, starting when it logs `ready sha=`. The ping never touches the database and carries no
+Member data. A failed ping is only logged (`heartbeat ping failed: <error type>`, never the URL);
+the next one goes 5 minutes later. If the scheduler has died, the bot logs `heartbeat skipped`
+and the monitor alerts.
 
 1. In the owner's own monitoring service, create a check that expects a ping every 5 minutes with a
    grace period of about 10 minutes, and alerts the owner when pings stop.
@@ -142,3 +153,14 @@ never touches the database and carries no Member data.
 3. Confirm the monitor shows pings within 10 minutes.
 
 Unset `HEARTBEAT_URL` disables pings; forks normally leave it unset.
+
+## Deploy version and the `ready sha=` line
+
+At startup the bot checks the database is at the latest migration, starts the Telegram poll, the
+scheduler and the heartbeat, then logs `ready sha=<commit>` and DMs the owner
+`online v<version> (<short commit>)`. The commit comes from `GIT_SHA`, baked into the image at
+build time (`--build-arg GIT_SHA=<commit>`); without it, Railway's `RAILWAY_GIT_COMMIT_SHA` (set
+only for deploys triggered from GitHub, not image deploys); otherwise `unknown`. If the database
+is behind, the bot logs `startup aborted: the database is not at the latest migration` and exits,
+so the smoke check never sees `ready` and the deploy rolls back. `/status` shows the same version
+and the uptime.

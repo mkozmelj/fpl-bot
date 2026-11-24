@@ -32,6 +32,8 @@ core/
                                  startup catch-up), backfill.py (join backfill),
                                  followed_leagues.py (Followed-league recompute),
                                  gameweek_final.py (gw-final job)
+                                 price_alert.py, price_archive.py (price snapshots,
+                                 Price-change archive, news log), member_backup.py
   tests/
     harness.py                   THE test seam (see below)
     conftest.py                  throwaway database + `bot` fixture
@@ -60,6 +62,9 @@ uv run python -m fplbot             # long-poll Telegram; Ctrl-C to stop
 Optional: `FPL_FIXTURES_DIR` points the fake source at another fixture directory.
 `BACKUP_AGE_PUBLIC_KEY` (an `age1...` public key) turns on the nightly encrypted Member backup
 to the owner's chat; unset, the owner is told once that backups are off.
+`HEARTBEAT_URL` turns on a ping every 5 minutes while the scheduler runs; `GIT_SHA` is the commit
+in the `ready sha=<commit>` startup line and `/status`; `DATABASE_STORAGE_LIMIT_MB` (default 1024)
+is the storage the owner is warned about at 70%.
 `FPL_SOURCE=live` (the default) calls the real FPL API through the polite client: at most 1
 request a second, a generic browser User-Agent, backoff on 429/5xx, never a retry on 403.
 
@@ -124,7 +129,9 @@ Scheduled jobs: `await bot.start_scheduling()` starts the bot's scheduler as pro
 startup (startup refresh and catch-up, then the plan); from then on `bot.advance(delta)` fires
 due jobs in simulated time, and `bot.restart()` keeps scheduling on. It is off by default so tests
 that script FPL answers are not disturbed by scheduled fetches. A feature adds its jobs by
-registering a planner (`app.scheduler.add`, see `jobs/scheduler.py`).
+registering a planner (`app.scheduler.add`, see `jobs/scheduler.py`). The price-history planner
+reads `bootstrap-static` every hour of the day; a test counting another feature's FPL requests
+starts with `bot.start_scheduling(price_history=False)`.
 `FakeTelegram._result` answers Bot API methods; add a case when the bot starts calling a new
 method whose result it reads.
 

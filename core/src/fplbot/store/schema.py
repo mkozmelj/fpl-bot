@@ -4,16 +4,20 @@ Schema changes go through a new Alembic revision in ``fplbot/store/migrations/ve
 be backward-compatible with the previous image (ADR 0003: expand, then contract).
 """
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
+    SmallInteger,
     String,
+    Text,
     Time,
     UniqueConstraint,
     text,
@@ -299,3 +303,74 @@ class H2hOpponent(Base):
     gameweek: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     opponent_entry_id: Mapped[int | None] = mapped_column(BigInteger)
     opponent_team_name: Mapped[str | None] = mapped_column(String(100))
+
+
+# --- Price history (ticket 37): kept across seasons, not Member data ---
+# Footballer ids are FPL element ids, renumbered every season, so each row counts only in its
+# own ``season``. Written by ``store/price_history.py``; never raw responses.
+
+
+class PriceSnapshot(Base):
+    """One Footballer's price-change state at one evening snapshot time (18:00, 20:00, 22:00,
+    23:00 and 23:45 UK). ``taken_at`` is the planned snapshot time."""
+
+    __tablename__ = "price_snapshots"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    footballer_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    price: Mapped[int] = mapped_column(SmallInteger)  # tenths of a million
+    # FPL's progress towards a change, in tenths of a percent (-974 is -97.4%).
+    percent: Mapped[int | None] = mapped_column(SmallInteger)
+    hourly_rate: Mapped[int | None] = mapped_column(Integer)
+    # Likelihood codes (-5..+5) for tonight's, tomorrow night's and the next night's update.
+    likelihood_tonight: Mapped[int | None] = mapped_column(SmallInteger)
+    likelihood_tomorrow: Mapped[int | None] = mapped_column(SmallInteger)
+    likelihood_after: Mapped[int | None] = mapped_column(SmallInteger)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    calibrating: Mapped[bool | None] = mapped_column(Boolean)
+
+
+class PriceChange(Base):
+    """An actual Price change, from the nightly ``stats/price-changes/`` archive. ``night`` is
+    the UK date before the 00:00 UK update that made it."""
+
+    __tablename__ = "price_changes"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    footballer_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    night: Mapped[date] = mapped_column(Date, index=True)
+    gameweek: Mapped[int | None] = mapped_column(Integer)
+    club_id: Mapped[int | None] = mapped_column(Integer)
+    cost_before: Mapped[int] = mapped_column(SmallInteger)
+    cost_after: Mapped[int] = mapped_column(SmallInteger)
+
+
+class PricePrediction(Base):
+    """FPL's likelihood codes for one Footballer at the night's first Price-alert time, kept to
+    score the predictor against the actual change (``/accuracy``)."""
+
+    __tablename__ = "price_predictions"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    night: Mapped[date] = mapped_column(Date, primary_key=True)
+    footballer_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    made_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    tonight: Mapped[int | None] = mapped_column(SmallInteger)
+    tomorrow: Mapped[int | None] = mapped_column(SmallInteger)
+
+
+class FootballerNews(Base):
+    """A change of a Footballer's FPL status flag (a/d/i/s/u/n) or news text, logged only when
+    it differs from the Footballer's previous row (the first read logs everyone once)."""
+
+    __tablename__ = "footballer_news"
+    __table_args__ = (Index("ix_footballer_news_latest", "season", "footballer_id", "observed_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    season: Mapped[str] = mapped_column(String(7))
+    footballer_id: Mapped[int] = mapped_column(Integer)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(8))
+    news: Mapped[str] = mapped_column(Text)
