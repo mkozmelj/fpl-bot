@@ -29,6 +29,7 @@ from fplbot.jobs.member_backup import (
 )
 from fplbot.jobs.post_deadline import PostDeadline
 from fplbot.jobs.price_alert import PriceAlerts
+from fplbot.jobs.price_archive import PriceArchive
 from fplbot.jobs.runner import JobRunner
 from fplbot.jobs.scheduler import Scheduler, daily
 from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
@@ -37,6 +38,7 @@ from fplbot.sources.live import HttpxFplTransport
 from fplbot.store.completions import CompletionStore
 from fplbot.store.db import create_engine
 from fplbot.store.members import MemberStore
+from fplbot.store.price_history import PriceHistoryStore
 from fplbot.store.reference import ReferenceStore
 from fplbot.store.squads import SquadStore
 from fplbot.store.watch_list import WatchListStore
@@ -64,6 +66,9 @@ class FplBotApp:
         # Reference data (Gameweeks, Footballers, clubs, fixtures) and Members' history/picks.
         self.reference = ReferenceStore(self.engine, self.clock)
         self.squads = SquadStore(self.engine)
+        # Completion rows of idempotent jobs (ticket 31) and price history (ticket 37).
+        self.completions = CompletionStore(self.engine)
+        self.price_history = PriceHistoryStore(self.engine)
 
         def on_team_linked(member_number: int, team_id: int) -> None:
             job = backfill_member(
@@ -90,6 +95,7 @@ class FplBotApp:
                 reference=self.reference,
                 squads=self.squads,
                 on_team_linked=on_team_linked,
+                price_history=self.price_history,
                 on_settings_changed=lambda: self.scheduler.rebuild(),
             ),
         )
@@ -120,10 +126,18 @@ class FplBotApp:
             owner_alerts=self.owner_alerts,
             clock=self.clock,
             send=send_to_member,
+            price_history=self.price_history,
+            completions=self.completions,
+        )
+        # Price snapshots, the nightly Price-change archive and the news log (ticket 37).
+        self.price_archive = PriceArchive(
+            history=self.price_history,
+            completions=self.completions,
+            reference=self.reference,
+            clock=self.clock,
         )
 
         # Scheduled jobs: each feature adds a planner (see jobs/scheduler.py).
-        self.completions = CompletionStore(self.engine)
         self.scheduler = Scheduler(self.clock, self.jobs)
         self.post_deadline = PostDeadline(
             clock=self.clock,
@@ -134,6 +148,7 @@ class FplBotApp:
         )
         self.scheduler.add(self.post_deadline.plan)
         self.scheduler.add(self.price_alerts.plan)
+        self.scheduler.add(self.price_archive.plan)
         self.scheduler.add(
             daily(MEMBER_BACKUP_JOB, self.member_backup.run, MEMBER_BACKUP_AT, MEMBER_BACKUP_ZONE)
         )

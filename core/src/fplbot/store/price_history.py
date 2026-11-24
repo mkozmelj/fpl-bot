@@ -1,25 +1,45 @@
 """Price history kept across seasons (ticket 37): evening price snapshots, actual Price changes
-with a row per archived night, the projection codes at Price-alert time, and the news/status
-log. None of it is Member data (no CASCADE; ``/leave`` leaves it). Every write is idempotent, so
-a re-run job changes nothing.
+(an archived night also gets a ``price_archive`` completion row), the projection codes at
+Price-alert time, and the news/status log. None of it is Member data (no CASCADE; ``/leave``
+leaves it). Every write is idempotent, so a re-run job changes nothing.
 """
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, datetime
+from enum import StrEnum
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from fplbot.advice.price_accuracy import Horizon, Outcome
 from fplbot.sources.price_history import FplNews, FplPriceChange, FplPriceSnapshot
 from fplbot.store.schema import (
     FootballerNews,
-    PriceArchiveNight,
     PriceChange,
     PricePrediction,
     PriceSnapshot,
 )
+
+# The completion-row job of the nightly archive (``store/completions.py``); periods are nights.
+PRICE_ARCHIVE = "price_archive"
+
+
+class Horizon(StrEnum):
+    TONIGHT = "tonight"
+    TOMORROW = "tomorrow"
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """``count`` predictions of ``code`` for the price update after ``night`` whose actual move
+    was ``moved`` (+1 rose, -1 fell, 0 no change)."""
+
+    night: date
+    horizon: Horizon
+    code: int
+    moved: int
+    count: int
 
 
 class PriceHistoryStore:
@@ -75,20 +95,8 @@ class PriceHistoryStore:
                 await session.execute(insert(FootballerNews).values(changed))
             return len(changed)
 
-    async def archived(self, season: str, night: date) -> bool:
-        async with self._sessions() as session:
-            found = await session.scalar(
-                select(PriceArchiveNight.night).where(
-                    PriceArchiveNight.season == season, PriceArchiveNight.night == night
-                )
-            )
-            return found is not None
-
-    async def archive(
-        self, season: str, night: date, changes: Iterable[FplPriceChange], at: datetime
-    ) -> int:
-        """Store the Price changes not stored yet and mark ``night`` archived, in one
-        transaction; the number of new changes."""
+    async def save_changes(self, season: str, changes: Iterable[FplPriceChange]) -> int:
+        """Store the Price changes not stored yet; the number of new ones."""
         values = [
             {
                 "season": season,
@@ -102,22 +110,16 @@ class PriceHistoryStore:
             }
             for c in changes
         ]
+        if not values:
+            return 0
         async with self._sessions.begin() as session:
-            stored = 0
-            if values:
-                result = await session.execute(
-                    insert(PriceChange)
-                    .values(values)
-                    .on_conflict_do_nothing()
-                    .returning(PriceChange.footballer_id)
-                )
-                stored = len(result.all())
-            await session.execute(
-                insert(PriceArchiveNight)
-                .values(season=season, night=night, archived_at=at)
+            result = await session.execute(
+                insert(PriceChange)
+                .values(values)
                 .on_conflict_do_nothing()
+                .returning(PriceChange.footballer_id)
             )
-            return stored
+            return len(result.all())
 
     async def save_predictions(
         self,
@@ -148,16 +150,17 @@ class PriceHistoryStore:
 
     async def outcomes(self, season: str) -> list[Outcome]:
         """Every scored prediction of ``season``, counted by target night, horizon, code and
-        actual move. Only archived nights are scored."""
+        actual move. Only nights with a ``price_archive`` completion row are scored (there, a
+        Footballer without a stored change did not change)."""
         async with self._sessions() as session:
-            rows = await session.execute(_OUTCOMES, {"season": season})
+            rows = await session.execute(_OUTCOMES, {"season": season, "job": PRICE_ARCHIVE})
             return [
                 Outcome(
                     night=row.night,
                     horizon=Horizon.TONIGHT if row.days == 0 else Horizon.TOMORROW,
                     code=row.code,
                     moved=row.moved,
-                    count=row.count,
+                    count=row.predictions,
                 )
                 for row in rows
             ]
@@ -165,10 +168,13 @@ class PriceHistoryStore:
 
 _OUTCOMES = text("""
     SELECT p.night + h.days AS night, h.days AS days, h.code AS code,
-           COALESCE(SIGN(c.cost_after - c.cost_before), 0)::int AS moved, COUNT(*)::int AS count
+           COALESCE(SIGN(c.cost_after - c.cost_before), 0)::int AS moved,
+           COUNT(*)::int AS predictions
     FROM price_predictions p
     CROSS JOIN LATERAL (VALUES (0, p.tonight), (1, p.tomorrow)) AS h(days, code)
-    JOIN price_archive_nights a ON a.season = p.season AND a.night = p.night + h.days
+    JOIN job_completions a
+      ON a.season = p.season AND a.job = :job
+     AND a.period = to_char(p.night + h.days, 'YYYY-MM-DD')
     LEFT JOIN price_changes c
       ON c.season = p.season AND c.night = p.night + h.days AND c.footballer_id = p.footballer_id
     WHERE p.season = :season AND h.code IS NOT NULL

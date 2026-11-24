@@ -134,11 +134,13 @@ def _likelihoods(projections: Any) -> tuple[int | None, int | None, int | None]:
 
 def _rows(data: Any) -> Iterable[dict[str, Any]]:
     if isinstance(data, dict):
-        lists = [v for v in data.values() if isinstance(v, list)]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-        data = lists[0] if len(lists) == 1 else None  # pyright: ignore[reportUnknownVariableType]
+        values: list[Any] = list(data.values())  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+        lists: list[Any] = [v for v in values if isinstance(v, list)]
+        data = lists[0] if len(lists) == 1 else None
     if not isinstance(data, list):
         raise FplBadData(200)
-    return data  # pyright: ignore[reportUnknownVariableType]
+    rows: list[dict[str, Any]] = data  # pyright: ignore[reportUnknownVariableType]
+    return rows
 
 
 def _tenths(value: Any) -> int | None:

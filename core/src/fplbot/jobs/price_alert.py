@@ -10,6 +10,11 @@ are calibrating. A failed fetch (FPL down, or no projection fields at all) is re
 10 minutes if that still lands by 23:15 UK (a 403 is never retried); if it still fails, Members
 get nothing and the owner gets one DM for the night, however many send times fail. The job
 reports its own failures, so the runner sees it succeed. Logs name Members by number only.
+
+Once a send time's alerts are out it gets a ``price-alert`` completion row (period
+``2026-11-19T19:00``), so a re-run (the scheduler re-fires a run after a restart inside its
+grace window) sends nothing again. Every Footballer's codes are then stored for ``/accuracy``
+(ticket 37).
 """
 
 import logging
@@ -28,7 +33,9 @@ from fplbot.jobs.runner import Job
 from fplbot.jobs.scheduler import PlannedRun
 from fplbot.sources.fpl import FplBlocked, FplError, FplGameweek, FplSource, Priority
 from fplbot.sources.price_projections import price_projections
+from fplbot.store.completions import CompletionStore
 from fplbot.store.members import MemberRecord, MemberStore
+from fplbot.store.price_history import PriceHistoryStore
 from fplbot.store.seasons import season_of
 from fplbot.store.squads import SquadStore
 from fplbot.store.watch_list import WatchListStore
@@ -64,7 +71,11 @@ class PriceAlerts:
         owner_alerts: OwnerAlerts,
         clock: Clock,
         send: SendMessage,
+        price_history: PriceHistoryStore,
+        completions: CompletionStore,
     ) -> None:
+        self._price_history = price_history
+        self._completions = completions
         self._members = members
         self._watch_list = watch_list
         self._squads = squads
@@ -107,6 +118,10 @@ class PriceAlerts:
             members = [m for m in await self._members.active() if _sends_at(m, send_time, night)]
             if not members:
                 return
+            season, period = season_of(send_time), _send_period(send_time)
+            if await self._completions.done(JOB_NAME, season, period):
+                log.info("price alerts for this send time were already sent")
+                return
             try:
                 data = await self._fetch(fpl, night)
             except FplError as error:
@@ -115,11 +130,20 @@ class PriceAlerts:
                     JOB_NAME, error.code, night, texts.price_alert_failed(error.code, JOB_NAME)
                 )
                 return
-            if not any(p.tonight is not None for p in data.prices.values()):
+            if any(p.tonight is not None for p in data.prices.values()):
+                for member in members:
+                    await self._alert(member, data, night)
+            else:
                 log.info("price projections unavailable (calibrating): no alerts")
-                return
-            for member in members:
-                await self._alert(member, data, night)
+            # Sent: a re-run of this send time (e.g. after a restart) sends nothing again.
+            await self._completions.record(JOB_NAME, season, period, self._clock.now())
+            # The codes Members saw, for /accuracy (ticket 37; the night's first time counts).
+            await self._price_history.save_predictions(
+                season,
+                night,
+                send_time,
+                ((p.id, p.tonight, p.tomorrow) for p in data.prices.values()),
+            )
 
         return job
 
@@ -177,6 +201,11 @@ async def _night_data(fpl: FplSource) -> _Night:
     bootstrap = await fpl.bootstrap_static(timedelta(0))
     reference = await fpl.reference()  # the copy just fetched, no second request
     return _Night(price_projections(bootstrap), reference.gameweeks)
+
+
+def _send_period(send_time: datetime) -> str:
+    """The completion-row period of one send time, e.g. ``2026-11-19T19:00`` (UK)."""
+    return f"{send_time.astimezone(UK):%Y-%m-%dT%H:%M}"
 
 
 def _sends_at(member: MemberRecord, send_time: datetime, night: date) -> bool:

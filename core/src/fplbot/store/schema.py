@@ -222,6 +222,7 @@ class JobCompletion(Base):
     period: Mapped[str] = mapped_column(String(16), primary_key=True)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
+
 # --- Price history (ticket 37): kept across seasons, not Member data ---
 # Footballer ids are FPL element ids, renumbered every season, so each row counts only in its
 # own ``season``. Written by ``store/price_history.py``; never raw responses.
@@ -262,17 +263,6 @@ class PriceChange(Base):
     club_id: Mapped[int | None] = mapped_column(Integer)
     cost_before: Mapped[int] = mapped_column(SmallInteger)
     cost_after: Mapped[int] = mapped_column(SmallInteger)
-
-
-class PriceArchiveNight(Base):
-    """A night whose ``stats/price-changes/`` archive has been stored: re-runs are no-ops, and
-    only such nights are scored by ``/accuracy`` (a missing change then means "no change")."""
-
-    __tablename__ = "price_archive_nights"
-
-    season: Mapped[str] = mapped_column(String(7), primary_key=True)
-    night: Mapped[date] = mapped_column(Date, primary_key=True)
-    archived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class PricePrediction(Base):

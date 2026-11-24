@@ -316,6 +316,43 @@ def price_alert_failed(code: str, job: str) -> str:
     return f"{owner_alert(code, job)} Tonight's Price alerts were not sent."
 
 
+# --- /accuracy (ticket 37): owner only ---
+
+ACCURACY_EMPTY = (
+    "Price predictor accuracy: nothing scored yet. A night's codes are scored once its 00:10 "
+    "price-change archive is stored."
+)
+ACCURACY_HIT = "A hit: a + code rose, a - code fell, 0 stayed."
+ACCURACY_TOTAL = "All"
+ACCURACY_MANUAL = "Raise the alert threshold by hand if it persists; nothing changes by itself."
+
+
+def accuracy_header(season: str) -> str:
+    return f"Price predictor accuracy · {season}"
+
+
+def accuracy_section(tomorrow: bool, nights: int) -> str:
+    horizon = "Tomorrow night's code" if tomorrow else "Tonight's code"
+    return f"{horizon} · last {nights} nights · season"
+
+
+def accuracy_line(code: str, recent: str, season: str) -> str:
+    return f"{code}  {recent} · {season}"
+
+
+def accuracy_tally(hits: int, predictions: int, percent: int | None) -> str:
+    return "no data" if percent is None else f"{hits}/{predictions} {percent}%"
+
+
+def accuracy_floors_met(nights: int, minimum: int) -> str:
+    return f"Floors (±4 70%, ±5 85%; last {nights} nights, {minimum}+ predictions a code): all met."
+
+
+def accuracy_breach(tomorrow: bool, code: str, tally: str, floor: int) -> str:
+    horizon = "tomorrow night's" if tomorrow else "tonight's"
+    return f"Below floor: {horizon} {code} at {tally} (floor {floor}%)."
+
+
 def settings_watch_list(names: list[str] | None, count: int) -> str:
     """The /settings line. ``names`` is ``None`` when FPL can't be reached for them."""
     if count == 0:

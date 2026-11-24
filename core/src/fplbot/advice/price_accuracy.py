@@ -14,29 +14,13 @@ the owner raises the alert threshold by hand; nothing changes automatically.
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from enum import StrEnum
+
+from fplbot.store.price_history import Horizon, Outcome
 
 WINDOW_NIGHTS = 14
 MIN_PREDICTIONS = 20
 FLOORS = {4: 70, 5: 85}  # percent, by |code|
 CODES = tuple(range(5, -6, -1))  # +5 first
-
-
-class Horizon(StrEnum):
-    TONIGHT = "tonight"
-    TOMORROW = "tomorrow"
-
-
-@dataclass(frozen=True)
-class Outcome:
-    """``count`` predictions of ``code`` for the price update after ``night`` whose actual move
-    was ``moved`` (+1 rose, -1 fell, 0 no change)."""
-
-    night: date
-    horizon: Horizon
-    code: int
-    moved: int
-    count: int
 
 
 @dataclass(frozen=True)

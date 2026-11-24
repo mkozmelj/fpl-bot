@@ -1,5 +1,6 @@
-"""Price history (ticket 37): evening price snapshots, the nightly Price-change archive (with a
-row per archived night), the projection codes at Price-alert time, and the news/status log.
+"""Price history (ticket 37): evening price snapshots, the nightly Price-change archive (its
+completion rows are ``job_completions``), the projection codes at Price-alert time, and the
+news/status log.
 
 Additive only (ADR 0003): new tables.
 
@@ -47,12 +48,6 @@ def upgrade() -> None:
     )
     op.create_index("ix_price_changes_night", "price_changes", ["night"])
     op.create_table(
-        "price_archive_nights",
-        sa.Column("season", sa.String(7), primary_key=True),
-        sa.Column("night", sa.Date(), primary_key=True),
-        sa.Column("archived_at", sa.DateTime(timezone=True), nullable=False),
-    )
-    op.create_table(
         "price_predictions",
         sa.Column("season", sa.String(7), primary_key=True),
         sa.Column("night", sa.Date(), primary_key=True),
@@ -79,7 +74,6 @@ def downgrade() -> None:
     op.drop_index("ix_footballer_news_latest", table_name="footballer_news")
     op.drop_table("footballer_news")
     op.drop_table("price_predictions")
-    op.drop_table("price_archive_nights")
     op.drop_index("ix_price_changes_night", table_name="price_changes")
     op.drop_table("price_changes")
     op.drop_table("price_snapshots")
