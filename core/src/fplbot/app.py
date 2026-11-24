@@ -18,12 +18,14 @@ from fplbot.clock import Clock, SystemClock
 from fplbot.config import Config
 from fplbot.delivery import telegram, texts
 from fplbot.delivery.conversation import Conversation
+from fplbot.delivery.elite import EliteGaps
 from fplbot.delivery.owner_alerts import OwnerAlerts
 from fplbot.delivery.owner_chat import TelegramOwnerChat
 from fplbot.delivery.rivals import RivalGaps
 from fplbot.delivery.status import OwnerStatus
 from fplbot.jobs.backfill import JOB_NAME as BACKFILL_JOB
 from fplbot.jobs.backfill import backfill_member
+from fplbot.jobs.elite import ELITE_DESIGN, EliteDesign, EliteSampler
 from fplbot.jobs.followed_leagues import FollowedLeagues
 from fplbot.jobs.footballer_stats import FootballerStats
 from fplbot.jobs.gameweek_final import GameweekFinal
@@ -51,6 +53,7 @@ from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient, Priorit
 from fplbot.sources.live import HttpxFplTransport
 from fplbot.store.completions import CompletionStore
 from fplbot.store.db import create_engine
+from fplbot.store.elite import EliteStore
 from fplbot.store.footballer_stats import FootballerStatsStore
 from fplbot.store.leagues import LeagueStore
 from fplbot.store.members import MemberStore
@@ -75,6 +78,7 @@ class FplBotApp:
         fpl_transport: FplTransport | None = None,
         telegram_request: BaseRequest | None = None,
         heartbeat_pinger: Pinger | None = None,
+        elite_design: EliteDesign | None = ELITE_DESIGN,
     ) -> None:
         self.clock: Clock = clock or SystemClock()
         self.started_at = self.clock.now()
@@ -106,6 +110,8 @@ class FplBotApp:
         # Rival picks and per-Gameweek Footballer stats, for the Rival gap (ticket 33).
         self.rival_picks = RivalPicks(RivalPicksStore(self.engine))
         self.footballer_stats_store = FootballerStatsStore(self.engine)
+        # Elite ownership aggregates, for the Elite gap (ticket 34).
+        self.elite_store = EliteStore(self.engine)
 
         def on_team_linked(member_number: int, team_id: int) -> None:
             job = backfill_member(
@@ -138,6 +144,13 @@ class FplBotApp:
                     squads=self.squads,
                     leagues=self.leagues,
                     rivals=RivalPicksStore(self.engine),
+                    stats=self.footballer_stats_store,
+                ),
+                elite_gaps=EliteGaps(
+                    clock=self.clock,
+                    reference=self.reference,
+                    squads=self.squads,
+                    elite=self.elite_store,
                     stats=self.footballer_stats_store,
                 ),
                 on_team_linked=on_team_linked,
@@ -196,6 +209,17 @@ class FplBotApp:
             squads=self.squads,
             completions=self.completions,
             rival_picks=self.rival_picks,
+            # The Elite sampler (ticket 34); ``None`` leaves it out (tests that don't need it).
+            elite=None
+            if elite_design is None
+            else EliteSampler(
+                design=elite_design,
+                clock=self.clock,
+                reference=self.reference,
+                store=self.elite_store,
+                completions=self.completions,
+                jobs=self.jobs,
+            ),
         )
         self.scheduler.add(self.post_deadline.plan)
         # Followed leagues (ticket 32): recomputed on join / Goal change and when a GW is final.

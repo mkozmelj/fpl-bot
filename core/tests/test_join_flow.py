@@ -31,6 +31,8 @@ HELP = (
     "/league  your league table\n"
     "/rivals  where your Squad differs from your nearest Rivals\n"
     "/rivals all\n"
+    "/gap  where your Squad differs from the top 10k\n"
+    "/gap captain\n"
     "/watch  show your Watch list\n"
     "/watch add <name>\n"
     "/watch remove <name>\n"

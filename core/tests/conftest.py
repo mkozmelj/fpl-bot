@@ -15,7 +15,7 @@ from psycopg import sql
 from sqlalchemy import make_url
 
 from fplbot.store import migrate
-from tests.harness import BotHarness, running_bot
+from tests.harness import TEST_ELITE_DESIGN, BotHarness, running_bot
 
 
 @pytest.fixture(scope="session")
@@ -60,4 +60,11 @@ def empty_database(database_url: str) -> str:
 @pytest.fixture
 async def bot(empty_database: str) -> AsyncIterator[BotHarness]:
     async with running_bot(empty_database) as harness:
+        yield harness
+
+
+@pytest.fixture
+async def elite_bot(empty_database: str) -> AsyncIterator[BotHarness]:
+    """The bot with the Elite sampler on, at test scale (``TEST_ELITE_DESIGN``)."""
+    async with running_bot(empty_database, elite_design=TEST_ELITE_DESIGN) as harness:
         yield harness

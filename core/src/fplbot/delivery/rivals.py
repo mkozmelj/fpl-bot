@@ -10,12 +10,14 @@ opponent alone (this Gameweek's, i.e. the next deadline's; ``/rivals all``: the 
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
 
-from fplbot.advice.gap import Backing, Gap, GapLine, gap, shares_of
+from fplbot.advice.gap import Backing, Gap, gap, shares_of
 from fplbot.advice.rivals import all_rivals, goal_table, nearest_rivals
 from fplbot.clock import Clock
 from fplbot.delivery import texts
+from fplbot.delivery.gap_lines import backing as _backing
+from fplbot.delivery.gap_lines import name as _name
+from fplbot.delivery.gap_lines import xi_line as _line
 from fplbot.store.footballer_stats import FootballerStatsStore
 from fplbot.store.leagues import LeagueStore, LeagueTable
 from fplbot.store.members import MemberRecord
@@ -23,9 +25,6 @@ from fplbot.store.reference import Deadlines, ReferenceStore
 from fplbot.store.rivals import RivalPicksStore, TeamPicks
 from fplbot.store.seasons import season_of
 from fplbot.store.squads import Squad, SquadStore
-
-# A captain share below this is not worth a mention on a line (prototype).
-CAPTAIN_WORTH_MENTIONING = 0.05
 
 
 class RivalGaps:
@@ -147,11 +146,6 @@ class _Context:
     deadlines: Deadlines
 
 
-def _backing(squad: Squad) -> Backing:
-    captain = next((p.footballer_id for p in squad.xi + squad.bench if p.is_captain), None)
-    return Backing(frozenset(p.footballer_id for p in squad.xi), captain)
-
-
 def _backing_of(picks: TeamPicks) -> Backing:
     return Backing(picks.xi, picks.captain)
 
@@ -174,32 +168,3 @@ def _blocks(result: Gap, names: dict[int, str], you_back_title: str) -> list[str
         if side:
             lines += ["", title, *(_line(line, names) for line in side)]
     return lines
-
-
-def _line(line: GapLine, names: dict[int, str]) -> str:
-    captain = None
-    if line.you_captain or line.reference.captain >= CAPTAIN_WORTH_MENTIONING:
-        captain = (line.you_captain, _percent(line.reference.captain))
-    return texts.rivals_line(
-        _name(names, line.footballer_id),
-        line.you_start,
-        _percent(line.reference.xi),
-        captain,
-        _signed(line.edge),
-    )
-
-
-def _name(names: dict[int, str], footballer: int | None) -> str:
-    if footballer is None:
-        return "nobody"
-    return names.get(footballer, f"Footballer {footballer}")
-
-
-def _percent(share: float) -> int:
-    return int(Decimal(str(share * 100)).quantize(Decimal(1), ROUND_HALF_UP))
-
-
-def _signed(edge: float) -> str:
-    """``+4.0`` / ``−3.5`` (a true minus sign, as in the prototype), half rounded up."""
-    size = Decimal(str(abs(edge))).quantize(Decimal("0.1"), ROUND_HALF_UP)
-    return f"{'+' if edge >= 0 else '−'}{size}"
