@@ -2,6 +2,10 @@
 
 Required: ``TELEGRAM_BOT_TOKEN``, ``DATABASE_URL`` and ``OWNER_TELEGRAM_ID``. Everything else is
 optional so a fork runs with nothing but a bot token and a Postgres URL.
+
+The deployed commit comes from ``GIT_SHA`` (baked into the image as a build argument), else
+Railway's ``RAILWAY_GIT_COMMIT_SHA`` (set only for deploys triggered from a GitHub repo, not for
+image deploys), else ``"unknown"``. It is what the ``ready sha=<commit>`` startup line carries.
 """
 
 from collections.abc import Mapping
@@ -29,6 +33,13 @@ class Config:
     # The age public key (``age1...``) the nightly Member backup is encrypted to; its private
     # key lives only in the owner's password manager. None: no backup, and the owner is told.
     backup_public_key: str | None = None
+    # Pinged every 5 minutes while the bot is healthy (the owner's uptime monitor). None: no pings.
+    heartbeat_url: str | None = field(default=None, repr=False)
+    # The deployed commit, logged as ``ready sha=<commit>`` once the bot is up.
+    deploy_sha: str = "unknown"
+    # The database storage the plan allows (Neon Free: 1 GB per project); the owner is told once
+    # when the database passes 70% of it.
+    database_storage_limit_mb: int = 1024
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Config:
@@ -55,6 +66,20 @@ class Config:
                     "BACKUP_AGE_PUBLIC_KEY must be an age public key (age1...)"
                 ) from None
 
+        heartbeat_url = env.get("HEARTBEAT_URL", "").strip() or None
+        if heartbeat_url is not None and not heartbeat_url.startswith(("https://", "http://")):
+            raise ConfigError("HEARTBEAT_URL must be an http:// or https:// URL")
+
+        storage_limit = env.get("DATABASE_STORAGE_LIMIT_MB", "").strip() or "1024"
+        if not storage_limit.isdigit() or int(storage_limit) == 0:
+            raise ConfigError("DATABASE_STORAGE_LIMIT_MB must be a positive whole number")
+
+        sha = (
+            env.get("GIT_SHA", "").strip()
+            or env.get("RAILWAY_GIT_COMMIT_SHA", "").strip()
+            or "unknown"
+        )
+
         fixtures = env.get("FPL_FIXTURES_DIR", "").strip()
         return cls(
             telegram_bot_token=required("TELEGRAM_BOT_TOKEN"),
@@ -63,4 +88,7 @@ class Config:
             fpl_source="fake" if source == "fake" else "live",
             fpl_fixtures_dir=Path(fixtures) if fixtures else None,
             backup_public_key=backup_key,
+            heartbeat_url=heartbeat_url,
+            deploy_sha=sha,
+            database_storage_limit_mb=int(storage_limit),
         )

@@ -7,6 +7,7 @@ reply list. Members are handed to ``MemberFlow`` (setup, settings, ``/leave``).
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
 from fplbot.clock import Clock
@@ -44,8 +45,10 @@ class Conversation:
         squads: SquadStore,
         on_team_linked: TeamLinked,
         on_settings_changed: SettingsChanged = lambda: None,
+        owner_status: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._owner_id = owner_id
+        self._owner_status = owner_status
         self._members = members
         self._clock = clock
         self._wrong_codes = AttemptLimiter(WRONG_CODES_ALLOWED, WRONG_CODE_WINDOW)
@@ -69,6 +72,10 @@ class Conversation:
             log.info("invite issued")
             hours = int(INVITE_VALID_FOR.total_seconds() // 3600)
             return [Reply(texts.invite_link(bot_username, code, hours))]
+
+        # Before the Member lookup: /status must answer while the database is down.
+        if command == "/status" and message.user_id == self._owner_id and self._owner_status:
+            return [Reply(await self._owner_status())]
 
         member = await self._members.get(message.chat_id)
         if member is not None:
