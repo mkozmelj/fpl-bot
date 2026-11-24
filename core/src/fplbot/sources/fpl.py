@@ -43,6 +43,7 @@ __all__ = [
     "FplHistory",
     "FplHistoryGameweek",
     "FplLeague",
+    "FplLiveFootballer",
     "FplPick",
     "FplPicks",
     "FplReference",
@@ -318,6 +319,11 @@ class FplSource:
         has no picks for it (404: the upcoming Gameweek, or before the team existed)."""
         data = await self.get_json(f"entry/{entry_id}/event/{gameweek}/picks/")
         return None if data is None else _parsed(lambda d: _picks(gameweek, d), data)
+
+    async def live(self, gameweek: int) -> tuple[FplLiveFootballer, ...] | None:
+        """Every Footballer's stats in a Gameweek (``event/{gw}/live/``); ``None`` on 404."""
+        data = await self.get_json(f"event/{gameweek}/live/")
+        return None if data is None else _parsed(_live, data)
 
     async def team(self, entry_id: int) -> FplEntry | None:
         """An FPL team for jobs: ``None`` if there is no such team, ``FplError`` if FPL fails."""
@@ -680,3 +686,57 @@ def _h2h_matches(data: dict[str, Any]) -> tuple[FplH2hMatch, ...]:
         )
         for match in results
     )
+
+
+# --- Per-Gameweek Footballer stats (ticket 33) ----------------------------------------------
+
+
+@dataclass(frozen=True)
+class FplLiveFootballer:
+    """A Footballer's totals over a Gameweek's fixtures (``event/{gw}/live/``). Expected
+    figures are FPL's decimal strings parsed to floats; fields FPL leaves out are ``None``."""
+
+    footballer_id: int
+    total_points: int
+    minutes: int
+    starts: int | None
+    goals_scored: int | None
+    assists: int | None
+    clean_sheets: int | None
+    goals_conceded: int | None
+    saves: int | None
+    bonus: int | None
+    bps: int | None
+    expected_goals: float | None
+    expected_assists: float | None
+    expected_goals_conceded: float | None
+
+
+def _optional_float(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
+def _live(data: dict[str, Any]) -> tuple[FplLiveFootballer, ...]:
+    elements: list[dict[str, Any]] = data["elements"]
+    footballers: list[FplLiveFootballer] = []
+    for element in elements:
+        stats: dict[str, Any] = element["stats"]
+        footballers.append(
+            FplLiveFootballer(
+                footballer_id=int(element["id"]),
+                total_points=int(stats["total_points"]),
+                minutes=int(stats["minutes"]),
+                starts=_optional_int(stats.get("starts")),
+                goals_scored=_optional_int(stats.get("goals_scored")),
+                assists=_optional_int(stats.get("assists")),
+                clean_sheets=_optional_int(stats.get("clean_sheets")),
+                goals_conceded=_optional_int(stats.get("goals_conceded")),
+                saves=_optional_int(stats.get("saves")),
+                bonus=_optional_int(stats.get("bonus")),
+                bps=_optional_int(stats.get("bps")),
+                expected_goals=_optional_float(stats.get("expected_goals")),
+                expected_assists=_optional_float(stats.get("expected_assists")),
+                expected_goals_conceded=_optional_float(stats.get("expected_goals_conceded")),
+            )
+        )
+    return tuple(footballers)

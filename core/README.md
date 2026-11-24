@@ -31,7 +31,8 @@ core/
                                  store), post_deadline.py (picks job, deadline refreshes,
                                  startup catch-up), backfill.py (join backfill),
                                  followed_leagues.py (Followed-league recompute),
-                                 gameweek_final.py (gw-final job)
+                                 gameweek_final.py (gw-final job),
+                                 rival_picks.py, footballer_stats.py (Rival gap data)
                                  price_alert.py, price_archive.py (price snapshots,
                                  Price-change archive, news log), member_backup.py
   tests/

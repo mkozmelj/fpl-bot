@@ -20,10 +20,12 @@ from fplbot.delivery import telegram, texts
 from fplbot.delivery.conversation import Conversation
 from fplbot.delivery.owner_alerts import OwnerAlerts
 from fplbot.delivery.owner_chat import TelegramOwnerChat
+from fplbot.delivery.rivals import RivalGaps
 from fplbot.delivery.status import OwnerStatus
 from fplbot.jobs.backfill import JOB_NAME as BACKFILL_JOB
 from fplbot.jobs.backfill import backfill_member
 from fplbot.jobs.followed_leagues import FollowedLeagues
+from fplbot.jobs.footballer_stats import FootballerStats
 from fplbot.jobs.gameweek_final import GameweekFinal
 from fplbot.jobs.heartbeat import Heartbeat, HttpxPinger, Pinger
 from fplbot.jobs.member_backup import (
@@ -35,6 +37,7 @@ from fplbot.jobs.member_backup import (
 from fplbot.jobs.post_deadline import PostDeadline
 from fplbot.jobs.price_alert import PriceAlerts
 from fplbot.jobs.price_archive import PriceArchive
+from fplbot.jobs.rival_picks import RivalPicks
 from fplbot.jobs.runner import JobRunner
 from fplbot.jobs.scheduler import Scheduler, daily
 from fplbot.jobs.storage_check import (
@@ -48,12 +51,14 @@ from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient, Priorit
 from fplbot.sources.live import HttpxFplTransport
 from fplbot.store.completions import CompletionStore
 from fplbot.store.db import create_engine
+from fplbot.store.footballer_stats import FootballerStatsStore
 from fplbot.store.leagues import LeagueStore
 from fplbot.store.members import MemberStore
 from fplbot.store.migrate import schema_is_current
 from fplbot.store.owner_notices import OwnerNotices
 from fplbot.store.price_history import PriceHistoryStore
 from fplbot.store.reference import ReferenceStore
+from fplbot.store.rivals import RivalPicksStore
 from fplbot.store.squads import SquadStore
 from fplbot.store.usage import DatabaseUsage
 from fplbot.store.watch_list import WatchListStore
@@ -98,6 +103,9 @@ class FplBotApp:
         self.leagues = LeagueStore(self.engine)
         # Price snapshots, Price changes, alert-time codes and the news log (ticket 37).
         self.price_history = PriceHistoryStore(self.engine)
+        # Rival picks and per-Gameweek Footballer stats, for the Rival gap (ticket 33).
+        self.rival_picks = RivalPicks(RivalPicksStore(self.engine))
+        self.footballer_stats_store = FootballerStatsStore(self.engine)
 
         def on_team_linked(member_number: int, team_id: int) -> None:
             job = backfill_member(
@@ -124,6 +132,14 @@ class FplBotApp:
                 reference=self.reference,
                 squads=self.squads,
                 leagues=self.leagues,
+                rival_gaps=RivalGaps(
+                    clock=self.clock,
+                    reference=self.reference,
+                    squads=self.squads,
+                    leagues=self.leagues,
+                    rivals=RivalPicksStore(self.engine),
+                    stats=self.footballer_stats_store,
+                ),
                 on_team_linked=on_team_linked,
                 price_history=self.price_history,
                 on_settings_changed=lambda: self.scheduler.rebuild(),
@@ -179,6 +195,7 @@ class FplBotApp:
             reference=self.reference,
             squads=self.squads,
             completions=self.completions,
+            rival_picks=self.rival_picks,
         )
         self.scheduler.add(self.post_deadline.plan)
         # Followed leagues (ticket 32): recomputed on join / Goal change and when a GW is final.
@@ -188,7 +205,17 @@ class FplBotApp:
             reference=self.reference,
             leagues=self.leagues,
             jobs=self.jobs,
+            rival_picks=self.rival_picks,
         )
+        # Per-Gameweek Footballer stats: the gw-final job reads each Gameweek's, and a launch
+        # backfill reads every earlier finished one (ticket 33).
+        self.footballer_stats = FootballerStats(
+            clock=self.clock,
+            reference=self.reference,
+            stats=self.footballer_stats_store,
+            completions=self.completions,
+        )
+        self.scheduler.add(self.footballer_stats.plan)
         self.gameweek_final = GameweekFinal(
             clock=self.clock,
             members=self.members,
@@ -196,6 +223,7 @@ class FplBotApp:
             squads=self.squads,
             completions=self.completions,
             followed_leagues=self.followed_leagues,
+            footballer_stats=self.footballer_stats,
         )
         self.scheduler.add(self.gameweek_final.plan)
         self.scheduler.add(self.price_alerts.plan)

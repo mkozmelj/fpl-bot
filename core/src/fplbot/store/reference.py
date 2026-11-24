@@ -103,10 +103,29 @@ class ReferenceStore:
             last=passed[-1] if passed else None, next=upcoming[0] if upcoming else None
         )
 
+    async def gameweeks(self, season: str) -> list[GameweekInfo]:
+        """Every stored Gameweek of ``season``, in order."""
+        async with self._sessions() as session:
+            rows = await session.scalars(
+                select(Gameweek).where(Gameweek.season == season).order_by(Gameweek.id)
+            )
+            return [GameweekInfo(g.id, g.deadline, g.finished, g.data_checked) for g in rows]
+
     async def gameweek(self, season: str, gameweek: int) -> GameweekInfo | None:
         async with self._sessions() as session:
             g = await session.get(Gameweek, (season, gameweek))
         return None if g is None else GameweekInfo(g.id, g.deadline, g.finished, g.data_checked)
+
+    async def footballer_names(self, season: str, ids: Iterable[int]) -> dict[int, str]:
+        """The FPL short name (``web_name``) of each of ``ids`` that is stored."""
+        wanted = list(ids)
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(Footballer.id, Footballer.web_name).where(
+                    Footballer.season == season, Footballer.id.in_(wanted)
+                )
+            )
+            return dict(rows.tuples().all())
 
     async def last_kickoff(self, season: str, gameweek: int) -> datetime | None:
         """The latest stored kickoff of ``gameweek``'s fixtures, or None if none is stored."""

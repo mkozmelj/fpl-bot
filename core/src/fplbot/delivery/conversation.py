@@ -19,6 +19,7 @@ from fplbot.delivery.member_flow import GoalChanged, MemberFlow, SettingsChanged
 from fplbot.delivery.messages import Button, Incoming, Press, Reply
 from fplbot.delivery.price_accuracy import render_accuracy
 from fplbot.delivery.rate_limit import AttemptLimiter
+from fplbot.delivery.rivals import RivalGaps
 from fplbot.sources.fpl import FplSource
 from fplbot.store.leagues import LeagueStore
 from fplbot.store.members import Joined, MemberStore, Refusal
@@ -51,6 +52,7 @@ class Conversation:
         reference: ReferenceStore,
         squads: SquadStore,
         leagues: LeagueStore,
+        rival_gaps: RivalGaps,
         on_team_linked: TeamLinked,
         price_history: PriceHistoryStore,
         on_settings_changed: SettingsChanged = lambda: None,
@@ -71,6 +73,7 @@ class Conversation:
             reference=reference,
             squads=squads,
             leagues=leagues,
+            rival_gaps=rival_gaps,
             on_team_linked=on_team_linked,
             on_settings_changed=on_settings_changed,
             on_goal_changed=on_goal_changed,
