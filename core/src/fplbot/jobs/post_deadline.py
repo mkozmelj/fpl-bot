@@ -7,7 +7,7 @@ Post-deadline job ("picks"), per Gameweek, from deadline +5 minutes:
 2. refresh reference data, as the "just after the deadline" ``bootstrap-static`` fetch;
 3. (ticket 34: the Elite standings pages go here, before any picks)
 4. each Member's locked Squad for the Gameweek;
-5. (ticket 33: Rival picks go here)
+5. the Rivals' Squads (ticket 33), when the Gameweek is the last deadline's;
 6. the ``picks`` completion row for the Gameweek;
 7. (ticket 34: the Elite picks sample goes here, with its own ``elite`` completion row).
 
@@ -23,6 +23,7 @@ import logging
 from datetime import datetime, timedelta
 
 from fplbot.clock import Clock
+from fplbot.jobs.rival_picks import RivalPicks
 from fplbot.jobs.runner import Job, waiting_while_updating
 from fplbot.jobs.scheduler import PlannedRun
 from fplbot.sources.fpl import FplSource
@@ -53,8 +54,10 @@ class PostDeadline:
         reference: ReferenceStore,
         squads: SquadStore,
         completions: CompletionStore,
+        rival_picks: RivalPicks,
     ) -> None:
         self._clock = clock
+        self._rival_picks = rival_picks
         self._members = members
         self._reference = reference
         self._squads = squads
@@ -121,7 +124,11 @@ class PostDeadline:
                 if picks is None:
                     continue  # no Squad at that deadline (team created later): /squad explains
                 await self._squads.save_picks(member_number, season, picks)
-            # Ticket 33: Rival picks go here.
+            # Rival picks (ticket 33), only for the Gameweek the Rival gap compares: a
+            # catch-up run for the Gameweek before it skips them.
+            last = (await self._reference.deadlines(self._clock.now())).last
+            if last is not None and last.id == gameweek:
+                await self._rival_picks.fetch_missing(fpl, season, gameweek)
             await self._completions.record(PICKS_JOB, season, period, self._clock.now())
             log.info("picks stored for gameweek %d", gameweek)
             # Ticket 34: the Elite picks sample goes here (its own "elite" completion row).

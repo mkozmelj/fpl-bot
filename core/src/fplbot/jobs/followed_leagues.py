@@ -11,7 +11,8 @@ league's table (``leagues-{kind}/{id}/standings/``, 50 rows a page; a league fit
 exactly when it has at most 50 managers) and, for head-to-head leagues, the opponent in the last
 and the next deadline's Gameweek. Nothing is written until everything is read, so a failed run
 leaves the previous tables in place. It runs on join and on a Goal change (``recompute_soon``)
-and from the Gameweek-final job after each Gameweek.
+and from the Gameweek-final job after each Gameweek. Afterwards it reads the last deadline's
+picks of any Rival that has none yet (ticket 33, ``jobs/rival_picks.py``).
 """
 
 import asyncio
@@ -19,6 +20,7 @@ import logging
 from dataclasses import dataclass
 
 from fplbot.clock import Clock
+from fplbot.jobs.rival_picks import RivalPicks
 from fplbot.jobs.runner import JobRunner, waiting_while_updating
 from fplbot.sources.fpl import (
     STANDINGS_PAGE_SIZE,
@@ -65,8 +67,10 @@ class FollowedLeagues:
         reference: ReferenceStore,
         leagues: LeagueStore,
         jobs: JobRunner,
+        rival_picks: RivalPicks,
     ) -> None:
         self._clock = clock
+        self._rival_picks = rival_picks
         self._members = members
         self._reference = reference
         self._leagues = leagues
@@ -138,6 +142,9 @@ class FollowedLeagues:
                 at=now,
             )
             log.info("followed leagues recomputed: %d leagues", len(snapshots))
+        if last is not None:
+            # New Rivals (a Member joined or switched Goal) get their last-deadline Squads.
+            await self._rival_picks.fetch_missing(fpl, season, last.id)
 
     async def _read_league(
         self, fpl: FplSource, key: LeagueKey, followings: list[_Following]

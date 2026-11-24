@@ -114,6 +114,8 @@ LEFT = "Done. Everything I stored about you is deleted. To rejoin you need a new
 COMMANDS: list[tuple[str, str]] = [
     ("/squad", "your Squad at the last deadline"),
     ("/league", "your league table"),
+    ("/rivals", "where your Squad differs from your nearest Rivals"),
+    ("/rivals all", ""),
     ("/watch", "show your Watch list"),
     ("/watch add <name>", ""),
     ("/watch remove <name>", ""),
@@ -403,6 +405,100 @@ def league_leader(points: int) -> str:
 
 def league_h2h_opponent(gameweek: int, team_name: str | None) -> str:
     return f"GW{gameweek} opponent: {team_name}" if team_name else f"GW{gameweek}: a bye"
+
+
+# --- /rivals: the Rival gap (ticket 33; shape from rivalMessage in the Gap prototype) ---
+
+RIVALS_USAGE = "Use /rivals for your nearest Rivals, or /rivals all for the whole league."
+RIVALS_NO_LEAGUE = (
+    "No league to find your Rivals in yet. I use your Goal league, or with Overall rank your "
+    "first Mini-league of up to 50 managers. If you've just joined or changed /goal, try again "
+    "in a few minutes."
+)
+RIVALS_NOT_IN_TABLE = (
+    "You're not in this league's table yet: FPL adds new managers at its next update. "
+    "/rivals all compares you with everyone in it."
+)
+RIVALS_NO_STATS = (
+    "I don't have Footballers' points from finished Gameweeks yet, so I can't weigh the "
+    "differences. Try again later."
+)
+RIVALS_YOU_BACK = "You back, they mostly don't"
+RIVALS_THEY_BACK = "They back, you don't"
+RIVALS_OPPONENT_YOU_BACK = "You back, they don't"
+RIVALS_NOTHING_STANDS_OUT = "No single Footballer stands out against these Rivals."
+RIVALS_OPPONENT_NOTHING_STANDS_OUT = "No single Footballer stands out against your opponent."
+RIVALS_PICKS_AS_OF_LAST_DEADLINE = "Rival picks are also as of the last deadline."
+
+
+def rivals_header(league: str, count: int, everyone: bool) -> str:
+    rivals = "Rival" if count == 1 else "Rivals"
+    who = f"all {count} {rivals}" if everyone else f"nearest {count} by rank"
+    return f"Rival gap · {league} · {who}"
+
+
+def rivals_opponent_header(league: str, gameweek: int, team_name: str | None) -> str:
+    return f"Rival gap · {league} · GW{gameweek} opponent {team_name}"
+
+
+def rivals_squad_as_of(gameweek: int, next_gameweek: int | None) -> str:
+    if next_gameweek is None:
+        return f"GW{gameweek} deadline has passed: Squads are locked."
+    return (
+        f"Squad as of the GW{gameweek} deadline. GW{next_gameweek} picks are hidden until its "
+        "deadline."
+    )
+
+
+def rivals_no_squad(gameweek: int) -> str:
+    return (
+        f"I don't have your Squad from the GW{gameweek} deadline yet, so there's nothing to "
+        "compare. Try /rivals again later."
+    )
+
+
+def rivals_no_picks(gameweek: int) -> str:
+    return (
+        f"I don't have your Rivals' Squads from the GW{gameweek} deadline yet. Try /rivals "
+        "again later."
+    )
+
+
+def rivals_bye(gameweek: int) -> str:
+    return (
+        f"GW{gameweek}: a bye, so there's no opponent to compare with. /rivals all compares you "
+        "with the whole league."
+    )
+
+
+def rivals_no_opponent(gameweek: int) -> str:
+    return (
+        f"I don't know your GW{gameweek} opponent yet. /rivals all compares you with the whole "
+        "league."
+    )
+
+
+def rivals_line(
+    name: str, you_start: bool, they_start: int, captain: tuple[bool, int] | None, edge: str
+) -> str:
+    """``they_start`` and the captain share in whole percent; ``captain`` (you captain him,
+    they captain him) only when it matters."""
+    start = "start" if you_start else "don't"
+    line = f"  {name}: you {start} · they {they_start}%"
+    if captain is not None:
+        line += f" · captain you {'yes' if captain[0] else 'no'} / they {captain[1]}%"
+    return f"{line} · {edge}"
+
+
+def rivals_captain(name: str, same: int, count: int) -> str:
+    rivals = "Rival captains" if count == 1 else "Rivals captain"
+    return f"Captain: {name} · {same} of {count} {rivals} him too."
+
+
+def rivals_opponent_captain(yours: str, theirs: str, same: bool) -> str:
+    if same:
+        return f"Captain: {yours} · your opponent captains him too."
+    return f"Captain: you {yours}, they {theirs}."
 
 
 # --- Owner /status, startup and usage warnings (ticket 38) ---

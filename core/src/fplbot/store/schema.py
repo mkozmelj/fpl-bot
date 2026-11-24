@@ -11,6 +11,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -303,6 +304,53 @@ class H2hOpponent(Base):
     gameweek: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     opponent_entry_id: Mapped[int | None] = mapped_column(BigInteger)
     opponent_team_name: Mapped[str | None] = mapped_column(String(100))
+
+
+class RivalPick(Base):
+    """One of the 15 picks of a Rival's Squad at a Gameweek's deadline (ticket 33), for the
+    Rival gap. A Rival is any team in a Followed league's stored table, or a Member's
+    head-to-head opponent, that is not a Member's own team (those are ``member_picks``). Kept
+    for the season; a Rival's rows go when no Followed league holds them any more (pruned with
+    the leagues, ``store/leagues.py``). Only the team ID is kept, never a manager's name."""
+
+    __tablename__ = "rival_picks"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    entry_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    gameweek: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    slot: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    footballer_id: Mapped[int] = mapped_column(Integer)
+    multiplier: Mapped[int] = mapped_column(Integer)
+    is_captain: Mapped[bool] = mapped_column(Boolean)
+    is_vice_captain: Mapped[bool] = mapped_column(Boolean)
+
+
+# --- Per-Gameweek Footballer stats (ticket 33): kept across seasons, not Member data ---
+
+
+class FootballerGameweekStats(Base):
+    """A Footballer's totals over one finished Gameweek, from ``event/{gw}/live/`` (read once
+    when the Gameweek is final; a launch backfill reads every earlier one). The Gap's Phase 1
+    weight is the average ``total_points`` over the last 4 finished Gameweeks."""
+
+    __tablename__ = "footballer_gameweek_stats"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    gameweek: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    footballer_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    total_points: Mapped[int] = mapped_column(SmallInteger)
+    minutes: Mapped[int] = mapped_column(SmallInteger)
+    starts: Mapped[int | None] = mapped_column(SmallInteger)
+    goals_scored: Mapped[int | None] = mapped_column(SmallInteger)
+    assists: Mapped[int | None] = mapped_column(SmallInteger)
+    clean_sheets: Mapped[int | None] = mapped_column(SmallInteger)
+    goals_conceded: Mapped[int | None] = mapped_column(SmallInteger)
+    saves: Mapped[int | None] = mapped_column(SmallInteger)
+    bonus: Mapped[int | None] = mapped_column(SmallInteger)
+    bps: Mapped[int | None] = mapped_column(SmallInteger)
+    expected_goals: Mapped[float | None] = mapped_column(Float)
+    expected_assists: Mapped[float | None] = mapped_column(Float)
+    expected_goals_conceded: Mapped[float | None] = mapped_column(Float)
 
 
 # --- Price history (ticket 37): kept across seasons, not Member data ---

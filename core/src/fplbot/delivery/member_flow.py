@@ -30,9 +30,11 @@ from zoneinfo import ZoneInfo
 
 from fplbot.advice.alert_time import price_alert_send_time
 from fplbot.advice.league_table import league_view
+from fplbot.advice.rivals import goal_table
 from fplbot.clock import Clock
 from fplbot.delivery import texts
 from fplbot.delivery.messages import Button, Reply
+from fplbot.delivery.rivals import RivalGaps
 from fplbot.delivery.timezones import BUTTON_ZONES, resolve_timezone
 from fplbot.sources.footballer_search import Footballer, footballers_in, search
 from fplbot.sources.fpl import FplEntry, FplError, FplLeague, FplSource, Lookup
@@ -128,6 +130,7 @@ class MemberFlow:
         reference: ReferenceStore,
         squads: SquadStore,
         leagues: LeagueStore,
+        rival_gaps: RivalGaps,
         on_team_linked: TeamLinked,
         on_settings_changed: SettingsChanged = lambda: None,
         on_goal_changed: GoalChanged = lambda: None,
@@ -141,6 +144,7 @@ class MemberFlow:
         self._on_team_linked = on_team_linked
         self._on_settings_changed = on_settings_changed
         self._leagues = leagues
+        self._rival_gaps = rival_gaps
         self._on_goal_changed = on_goal_changed
         self._states: dict[int, ChatState] = {}
         self._commands: dict[str, CommandHandler] = {
@@ -150,6 +154,7 @@ class MemberFlow:
             "/settings": self._settings,
             "/squad": self._squad,
             "/league": self._league,
+            "/rivals": self._rivals,
             "/goal": self._goal,
             "/tz": self._tz,
             "/time": self._time,
@@ -402,7 +407,7 @@ class MemberFlow:
     async def _league(self, turn: Turn, argument: str) -> None:
         member = turn.member
         season = season_of(self._clock.now())
-        table = _goal_table(member, await self._leagues.followed(member.number, season))
+        table = goal_table(member, await self._leagues.followed(member.number, season))
         if table is None or member.team_id is None:
             turn.say(texts.LEAGUE_NONE)
             return
@@ -416,6 +421,9 @@ class MemberFlow:
             if opponent is not None:
                 lines.append(texts.league_h2h_opponent(gameweek, opponent.team_name))
         turn.say("\n".join(lines))
+
+    async def _rivals(self, turn: Turn, argument: str) -> None:
+        turn.say(await self._rival_gaps.reply(turn.member, argument))
 
     async def _goal(self, turn: Turn, argument: str) -> None:
         self._ask_goal(turn)
@@ -558,16 +566,6 @@ class MemberFlow:
 
     async def _unknown_command(self, turn: Turn, argument: str) -> None:
         turn.say(texts.UNKNOWN_COMMAND)
-
-
-def _goal_table(member: MemberRecord, followed: list[LeagueTable]) -> LeagueTable | None:
-    """The Goal league's table; with Overall rank as Goal, the first Followed league."""
-    league = member.league
-    if member.goal is Goal.LEAGUE and league is not None:
-        return next(
-            (t for t in followed if (t.kind, t.league_id) == (league.kind, league.id)), None
-        )
-    return followed[0] if followed else None
 
 
 def _league_text(table: LeagueTable, team_id: int) -> str:

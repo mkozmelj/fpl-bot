@@ -3,7 +3,8 @@
 FPL marks a Gameweek ``finished`` and later ``data_checked`` in ``bootstrap-static``; after
 that its points and league tables no longer change. The job then:
 
-1. (ticket 33: fetch ``event/{gw}/live`` once and store per-Gameweek Footballer stats);
+1. reads ``event/{gw}/live`` once and stores per-Gameweek Footballer stats (ticket 33,
+   ``jobs/footballer_stats.py``; skipped when already stored);
 2. refreshes each Member's history (``entry/{id}/history/``);
 3. recomputes the Followed leagues and refreshes their tables (``jobs/followed_leagues.py``),
    which also drops leagues no Member follows any more;
@@ -23,6 +24,7 @@ from datetime import datetime, timedelta
 
 from fplbot.clock import Clock
 from fplbot.jobs.followed_leagues import FollowedLeagues
+from fplbot.jobs.footballer_stats import FootballerStats
 from fplbot.jobs.runner import Job, waiting_while_updating
 from fplbot.jobs.scheduler import PlannedRun
 from fplbot.sources.fpl import FplSource
@@ -52,7 +54,9 @@ class GameweekFinal:
         squads: SquadStore,
         completions: CompletionStore,
         followed_leagues: FollowedLeagues,
+        footballer_stats: FootballerStats,
     ) -> None:
+        self._footballer_stats = footballer_stats
         self._clock = clock
         self._members = members
         self._reference = reference
@@ -98,7 +102,8 @@ class GameweekFinal:
             final = [gw for gw in await self._missing(now) if await self._is_final(season, gw)]
             if not final:
                 return
-            # Ticket 33: fetch event/{gw}/live once for each Gameweek in ``final`` here.
+            for gameweek in final:
+                await self._footballer_stats.fetch(fpl, season, gameweek)
             for member_number, team_id in await self._members.linked_teams():
                 history = await fpl.history(team_id)
                 if history is not None:

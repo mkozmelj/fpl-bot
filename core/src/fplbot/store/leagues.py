@@ -27,6 +27,7 @@ from fplbot.store.schema import (
     LeagueStanding,
     Member,
     MemberLeague,
+    RivalPick,
 )
 
 
@@ -179,11 +180,15 @@ class LeagueStore:
                 )
                 for o in opponents
             )
+            await session.flush()
+            await _delete_orphaned_rival_picks(session)
 
     async def forget_unfollowed(self) -> None:
-        """Delete every league no Member follows any more (e.g. right after a ``/leave``)."""
+        """Delete every league no Member follows any more (e.g. right after a ``/leave``), and
+        the picks of Rivals no stored table or opponent holds any more."""
         async with self._sessions.begin() as session:
             await _delete_unfollowed(session)
+            await _delete_orphaned_rival_picks(session)
 
     async def followed(self, member_number: int, season: str) -> list[LeagueTable]:
         """The Member's Followed leagues, in FPL's order of their Mini-leagues."""
@@ -275,6 +280,23 @@ async def _delete_unfollowed(session: AsyncSession) -> None:
                     MemberLeague.kind == FollowedLeague.kind,
                     MemberLeague.league_id == FollowedLeague.league_id,
                 )
+            ),
+        )
+    )
+
+
+async def _delete_orphaned_rival_picks(session: AsyncSession) -> None:
+    """Rival picks (ticket 33) go once no stored table row or head-to-head opponent row of
+    their season holds that team: no Member follows a league with them in it any more."""
+    await session.execute(
+        delete(RivalPick).where(
+            ~exists().where(
+                LeagueStanding.season == RivalPick.season,
+                LeagueStanding.entry_id == RivalPick.entry_id,
+            ),
+            ~exists().where(
+                H2hOpponent.season == RivalPick.season,
+                H2hOpponent.opponent_entry_id == RivalPick.entry_id,
             ),
         )
     )
