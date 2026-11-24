@@ -15,6 +15,7 @@ from fplbot.advice.alert_time import UK
 from fplbot.advice.price_accuracy import price_accuracy
 from fplbot.clock import Clock
 from fplbot.delivery import texts
+from fplbot.delivery.elite import EliteGaps
 from fplbot.delivery.member_flow import GoalChanged, MemberFlow, SettingsChanged, TeamLinked
 from fplbot.delivery.messages import Button, Incoming, Press, Reply
 from fplbot.delivery.price_accuracy import render_accuracy
@@ -53,6 +54,7 @@ class Conversation:
         squads: SquadStore,
         leagues: LeagueStore,
         rival_gaps: RivalGaps,
+        elite_gaps: EliteGaps,
         on_team_linked: TeamLinked,
         price_history: PriceHistoryStore,
         on_settings_changed: SettingsChanged = lambda: None,
@@ -74,6 +76,7 @@ class Conversation:
             squads=squads,
             leagues=leagues,
             rival_gaps=rival_gaps,
+            elite_gaps=elite_gaps,
             on_team_linked=on_team_linked,
             on_settings_changed=on_settings_changed,
             on_goal_changed=on_goal_changed,

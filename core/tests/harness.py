@@ -35,6 +35,7 @@ from telegram.request import BaseRequest, RequestData
 from fplbot import logs
 from fplbot.app import FplBotApp
 from fplbot.config import Config
+from fplbot.jobs.elite import EliteCohort, EliteDesign
 from fplbot.jobs.runner import Job
 from fplbot.sources.fake import FakeFplTransport
 from fplbot.sources.fpl import FplResponse, Priority
@@ -55,6 +56,12 @@ BACKUP_IDENTITY = pyrage.x25519.Identity.generate()
 DEPLOY_SHA = "0123abcdef0123abcdef0123abcdef0123abcdef"
 # A Thursday evening in the 2026-27 season, between Gameweeks.
 DEFAULT_START = datetime(2026, 11, 19, 18, 0, tzinfo=UTC)
+# The Elite sampler at test scale (``elite_bot`` fixture): the "top 10k" is the first 40
+# managers of the overall league (one standings page) and the sample is 20 of them, always
+# the 20 ranked highest (production draws at random), so tests know whose picks are read.
+TEST_ELITE_DESIGN = EliteDesign(
+    cohort=EliteCohort("10k", size=40, target=20), draw=lambda entries, n: entries[:n]
+)
 
 
 class FakeClock:
@@ -376,6 +383,7 @@ class BotHarness:
     _scheduling: bool = False
     _price_history: bool = True
     _started: bool = False
+    _elite_design: EliteDesign | None = None
 
     @property
     def owner(self) -> Chat:
@@ -508,6 +516,7 @@ class BotHarness:
             fpl_transport=self.fpl,
             telegram_request=self.telegram,
             heartbeat_pinger=self.heartbeat,
+            elite_design=self._elite_design,
         )
         await self.app.__aenter__()
         if self._started:
@@ -642,7 +651,11 @@ class _ListHandler(logging.Handler):
 
 
 @asynccontextmanager
-async def running_bot(database_url: str) -> AsyncGenerator[BotHarness]:
+async def running_bot(
+    database_url: str, *, elite_design: EliteDesign | None = None
+) -> AsyncGenerator[BotHarness]:
+    """The bot under test. The Elite sampler is off unless ``elite_design`` is given (the
+    ``elite_bot`` fixture), so other tests' post-deadline runs make no Elite requests."""
     config = Config.from_env(
         {
             "TELEGRAM_BOT_TOKEN": "123456:TEST-TOKEN",
@@ -663,9 +676,16 @@ async def running_bot(database_url: str) -> AsyncGenerator[BotHarness]:
         fpl_transport=fpl,
         telegram_request=telegram,
         heartbeat_pinger=heartbeat,
+        elite_design=elite_design,
     )
     harness = BotHarness(
-        app=app, config=config, clock=clock, telegram=telegram, fpl=fpl, heartbeat=heartbeat
+        app=app,
+        config=config,
+        clock=clock,
+        telegram=telegram,
+        fpl=fpl,
+        heartbeat=heartbeat,
+        _elite_design=elite_design,
     )
 
     root = logging.getLogger()
