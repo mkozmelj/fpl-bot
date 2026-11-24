@@ -29,8 +29,8 @@ stored secret. Local development uses a gitignored `.env` (see `.env.example`).
   `Analyze (python)`, `Analyze (actions)`. No required commit signing.
 - Settings → Actions → General: workflow permissions **read-only** by default; do not allow Actions
   to create or approve PRs.
-- Settings → Environments: create `production`, deployment branches `main` only, add the Railway
-  project token (ticket 42).
+- Settings → Environments: create `production`, deployment branches `main` only, and add the
+  Railway project token as the environment secret `RAILWAY_TOKEN`. Then follow "Deploys" below.
 - Locally: `uvx pre-commit install` for the gitleaks pre-commit hook.
 
 ## Rotating a secret
@@ -58,7 +58,7 @@ fresh `ready sha=` line and answers `/status`.
 
 1. Railway → project → Settings → Tokens: create a new token scoped to the **production**
    environment.
-2. GitHub → Settings → Environments → `production`: replace the token secret.
+2. GitHub → Settings → Environments → `production`: replace the `RAILWAY_TOKEN` secret.
 3. Delete the old token in Railway.
 4. Re-run the latest deploy workflow on `main` (or merge a trivial PR) and check it reaches the
    smoke check.
@@ -164,3 +164,83 @@ only for deploys triggered from GitHub, not image deploys); otherwise `unknown`.
 is behind, the bot logs `startup aborted: the database is not at the latest migration` and exits,
 so the smoke check never sees `ready` and the deploy rolls back. `/status` shows the same version
 and the uptime.
+
+A database *ahead* of the image (a rollback after a migration) is accepted: migrations are
+expand-only, so the previous image runs on the newer schema, and its `fplbot migrate` leaves that
+database alone (`the database is ahead of this image (a rollback?): nothing to migrate`).
+
+## Deploys
+
+Every merge to `main` runs `.github/workflows/deploy.yml`; there is no other way to deploy.
+
+1. **Image job:** builds the root `Dockerfile` once (`GIT_SHA` = the commit), scans it with Trivy
+   (fails on fixable HIGH/CRITICAL), pushes `ghcr.io/<owner>/<repo>:sha-<commit>`, signs that
+   digest keylessly with cosign and attests its build provenance.
+2. **Deploy job** (environment `production`): verifies the cosign signature (signed by this
+   workflow on `main`) and the provenance attestation, records the deployment now serving, points
+   the `production` tag at the verified digest, runs `railway redeploy` (Railway re-pulls the tag),
+   and waits up to 5 minutes for `ready sha=<commit>` in the new deployment's logs. If it doesn't
+   appear, it puts the `production` tag back on the previous digest and rolls Railway back to the
+   previous deployment (skipped when the new one failed before going live, e.g. a failed
+   migration, because the old container never stopped). A failed or rolled-back deploy leaves the
+   run red; fix forward with a new PR.
+
+### Migrations: Railway's pre-deploy command
+
+Chosen path: Railway's **pre-deploy command** `fplbot migrate` (`alembic upgrade head`), run from
+the image being deployed. No advisory-lock fallback is needed. Checked against Railway's docs on
+24 Nov 2026:
+
+- [Pre-deploy command](https://docs.railway.com/deployments/pre-deploy-command): runs between
+  build and deploy "in a separate container", with the service's variables and private network,
+  using what is "installed in the application image"; a non-zero exit means "the deployment will
+  not proceed" (not retried). No time limit unless the Pre-deploy Timeout is set.
+- [Deployments reference](https://docs.railway.com/deployments/reference): "If the source is a
+  Docker Image, the build step is skipped", so pre-deploy runs straight from the pulled image.
+- [Deployment teardown](https://docs.railway.com/deployments/deployment-teardown): "Once the new
+  deployment is active, the previous deployment is sent a SIGTERM", so after a failed migration
+  the old container keeps running.
+- [Infrastructure as code reference](https://docs.railway.com/infrastructure-as-code/reference):
+  `preDeploy` is a per-service deploy setting next to an image `source`.
+- [Deploy from a container registry](https://railway.com/guides/private-container-registry):
+  with a mutable tag, "The redeploy pulls the tag again and picks up the new digest".
+
+No page shows an image-sourced service *with* a pre-deploy command in one example, so confirm it
+on the first deploy: the deployment's logs show the Alembic lines before the bot starts. If
+pre-deploy were ever skipped, the bot refuses to start against a database behind it (no `ready`
+line), so the smoke check rolls back instead of running on an old schema.
+
+### One-time Railway and GitHub setup
+
+1. Railway (project in EU West): create the service from a **Docker image**,
+   `ghcr.io/<owner>/<repo>:production` (lowercase).
+   - Settings → Deploy: **Pre-deploy command** `fplbot migrate`, **Pre-deploy Timeout** 300 s
+     (a hung migration then fails the deploy instead of holding it); start command empty (the
+     image's `fplbot`); no healthcheck (no HTTP); restart policy On Failure.
+   - **Image auto-updates off** (only CI moves the `production` tag; an auto-update would race it).
+   - Variables: the sealed ones in "Where each secret lives". Set
+     `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS=0` so two bots don't long-poll Telegram at once.
+   - Project → Settings → Tokens: a **project token** for the production environment.
+2. GitHub: the `production` environment with `RAILWAY_TOKEN` (above), and the repository
+   **variable** `RAILWAY_SERVICE_ID` (the service's ID, not secret). The deploy workflow runs only
+   where that variable is set, so forks never try to deploy.
+3. First run: merge to `main`. The first push creates the GHCR package as **private**; set it to
+   **public** (Package settings → Change visibility; Railway Hobby pulls public images only), then
+   re-run the failed deploy job. There is no earlier deployment to roll back to on this run.
+4. Check the deployment logs show the Alembic lines (pre-deploy ran) and `ready sha=<commit>`,
+   and the owner got `online v…`.
+
+### Verify an image by hand
+
+```sh
+cosign verify ghcr.io/<owner>/<repo>@sha256:<digest> \
+  --certificate-identity https://github.com/<owner>/<repo>/.github/workflows/deploy.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh attestation verify oci://ghcr.io/<owner>/<repo>@sha256:<digest> --repo <owner>/<repo>
+```
+
+### Pinned tools
+
+The workflow pins Trivy, the Railway CLI and cosign by version (Trivy and the CLI also by the
+SHA-256 of the release archive) in its `env:` block. Dependabot doesn't see those, so bump them by
+hand now and then, taking each archive's SHA-256 from the release's asset digest.
