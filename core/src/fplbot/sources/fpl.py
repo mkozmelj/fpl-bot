@@ -39,6 +39,7 @@ __all__ = [
     "FplFixture",
     "FplFootballer",
     "FplGameweek",
+    "FplH2hMatch",
     "FplHistory",
     "FplHistoryGameweek",
     "FplLeague",
@@ -47,9 +48,12 @@ __all__ = [
     "FplReference",
     "FplResponse",
     "FplSource",
+    "FplStanding",
+    "FplStandings",
     "FplTransport",
     "FplUnexpectedStatus",
     "FplUpdating",
+    "LeagueKind",
     "Lookup",
     "PoliteFplClient",
     "Position",
@@ -315,6 +319,29 @@ class FplSource:
         data = await self.get_json(f"entry/{entry_id}/event/{gameweek}/picks/")
         return None if data is None else _parsed(lambda d: _picks(gameweek, d), data)
 
+    async def team(self, entry_id: int) -> FplEntry | None:
+        """An FPL team for jobs: ``None`` if there is no such team, ``FplError`` if FPL fails."""
+        data = await self.get_json(f"entry/{entry_id}/")
+        return None if data is None else _parsed(_entry, data)
+
+    async def standings(
+        self, kind: LeagueKind, league_id: int, page: int = 1
+    ) -> FplStandings | None:
+        """One page (50 rows) of a Mini-league's table; ``None`` if FPL has no such league."""
+        path = f"leagues-{kind}/{league_id}/standings/"
+        if page > 1:
+            path += f"?page_standings={page}"
+        data = await self.get_json(path)
+        return None if data is None else _parsed(lambda d: _standings(page, d), data)
+
+    async def h2h_matches(
+        self, league_id: int, gameweek: int, entry_id: int
+    ) -> tuple[FplH2hMatch, ...] | None:
+        """A head-to-head league's matches of ``entry_id`` in ``gameweek``; ``None`` on 404."""
+        path = f"leagues-h2h-matches/league/{league_id}/?event={gameweek}&entry={entry_id}&page=1"
+        data = await self.get_json(path)
+        return None if data is None else _parsed(_h2h_matches, data)
+
     async def entry(self, entry_id: int) -> FplEntry | Lookup:
         """An FPL team. Fail-soft for interactive callers: FPL failing is
         ``Lookup.UNAVAILABLE`` rather than an ``FplError``."""
@@ -337,11 +364,16 @@ class Lookup(Enum):
     UNAVAILABLE = "unavailable"  # FPL could not be reached or answered something unusable
 
 
+type LeagueKind = Literal["classic", "h2h"]
+
+
 @dataclass(frozen=True)
 class FplLeague:
     id: int
-    kind: Literal["classic", "h2h"]
+    kind: LeagueKind
     name: str
+    # The team's rank in the league, as ``entry/{id}/`` reports it (None if absent).
+    entry_rank: int | None = None
 
 
 @dataclass(frozen=True)
@@ -365,7 +397,9 @@ _PRIVATE = "x"
 def _entry(data: dict[str, Any]) -> FplEntry:
     leagues: dict[str, list[dict[str, Any]]] = data.get("leagues") or {}
     mini_leagues = tuple(
-        FplLeague(int(league["id"]), kind, str(league["name"]))
+        FplLeague(
+            int(league["id"]), kind, str(league["name"]), _optional_int(league.get("entry_rank"))
+        )
         for kind in ("classic", "h2h")
         for league in leagues.get(kind) or []
         if league.get("league_type") == _PRIVATE
@@ -575,4 +609,74 @@ def _picks(gameweek: int, data: dict[str, Any]) -> FplPicks:
             )
             for pick in data["picks"]
         ),
+    )
+
+
+# --- Mini-league standings and head-to-head matches (ticket 32) ----------------------------
+
+STANDINGS_PAGE_SIZE = 50
+
+
+@dataclass(frozen=True)
+class FplStanding:
+    """One row of a league table. ``points`` is the table's ranking figure: total FPL points in
+    a classic league, league points (3 a win) in a head-to-head one. The manager's own name is
+    never read: only the team's."""
+
+    position: int  # 1-based place in FPL's order (rank_sort), unique even when ranks tie
+    entry_id: int
+    team_name: str
+    rank: int
+    last_rank: int | None  # None for a team new to the table
+    points: int
+
+
+@dataclass(frozen=True)
+class FplStandings:
+    league_name: str
+    page: int
+    has_next: bool
+    rows: tuple[FplStanding, ...]
+
+
+@dataclass(frozen=True)
+class FplH2hMatch:
+    entry_1: int | None  # None: a bye (FPL's "average" opponent)
+    entry_1_name: str
+    entry_2: int | None
+    entry_2_name: str
+
+
+def _standings(page: int, data: dict[str, Any]) -> FplStandings:
+    table: dict[str, Any] = data["standings"]
+    results: list[dict[str, Any]] = table["results"]
+    first = (page - 1) * STANDINGS_PAGE_SIZE
+    return FplStandings(
+        league_name=str(data["league"]["name"]),
+        page=page,
+        has_next=bool(table.get("has_next")),
+        rows=tuple(
+            FplStanding(
+                position=first + index + 1,
+                entry_id=int(row["entry"]),
+                team_name=str(row["entry_name"]),
+                rank=int(row["rank"]),
+                last_rank=int(row["last_rank"]) if row.get("last_rank") else None,
+                points=int(row["total"]),
+            )
+            for index, row in enumerate(results)
+        ),
+    )
+
+
+def _h2h_matches(data: dict[str, Any]) -> tuple[FplH2hMatch, ...]:
+    results: list[dict[str, Any]] = data["results"]
+    return tuple(
+        FplH2hMatch(
+            entry_1=_optional_int(match.get("entry_1_entry")),
+            entry_1_name=str(match.get("entry_1_name") or ""),
+            entry_2=_optional_int(match.get("entry_2_entry")),
+            entry_2_name=str(match.get("entry_2_name") or ""),
+        )
+        for match in results
     )

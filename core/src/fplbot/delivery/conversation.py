@@ -11,10 +11,11 @@ from datetime import datetime, timedelta
 
 from fplbot.clock import Clock
 from fplbot.delivery import texts
-from fplbot.delivery.member_flow import MemberFlow, SettingsChanged, TeamLinked
+from fplbot.delivery.member_flow import GoalChanged, MemberFlow, SettingsChanged, TeamLinked
 from fplbot.delivery.messages import Button, Incoming, Press, Reply
 from fplbot.delivery.rate_limit import AttemptLimiter
 from fplbot.sources.fpl import FplSource
+from fplbot.store.leagues import LeagueStore
 from fplbot.store.members import Joined, MemberStore, Refusal
 from fplbot.store.reference import ReferenceStore
 from fplbot.store.squads import SquadStore
@@ -42,8 +43,10 @@ class Conversation:
         clock: Clock,
         reference: ReferenceStore,
         squads: SquadStore,
+        leagues: LeagueStore,
         on_team_linked: TeamLinked,
         on_settings_changed: SettingsChanged = lambda: None,
+        on_goal_changed: GoalChanged = lambda: None,
     ) -> None:
         self._owner_id = owner_id
         self._members = members
@@ -56,8 +59,10 @@ class Conversation:
             clock=clock,
             reference=reference,
             squads=squads,
+            leagues=leagues,
             on_team_linked=on_team_linked,
             on_settings_changed=on_settings_changed,
+            on_goal_changed=on_goal_changed,
         )
 
     async def respond(self, message: Incoming, bot_username: str) -> list[Reply]:

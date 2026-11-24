@@ -29,7 +29,9 @@ core/
     jobs/                        runner.py (JobRunner: runs a job, reports outcome to the
                                  owner), scheduler.py (planner registry, no persisted
                                  store), post_deadline.py (picks job, deadline refreshes,
-                                 startup catch-up), backfill.py (join backfill)
+                                 startup catch-up), backfill.py (join backfill),
+                                 followed_leagues.py (Followed-league recompute),
+                                 gameweek_final.py (gw-final job)
   tests/
     harness.py                   THE test seam (see below)
     conftest.py                  throwaway database + `bot` fixture
