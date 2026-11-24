@@ -109,6 +109,8 @@ type CommandHandler = Callable[[Turn, str], Awaitable[None]]
 type StepHandler = Callable[[Turn, str], Awaitable[None]]
 # Called with (Member number, team ID) once a Member has linked their team: starts the backfill.
 type TeamLinked = Callable[[int, int], None]
+# Called after a change that moves scheduled work (alert time, timezone, joining, leaving).
+type SettingsChanged = Callable[[], None]
 
 
 class MemberFlow:
@@ -122,6 +124,7 @@ class MemberFlow:
         reference: ReferenceStore,
         squads: SquadStore,
         on_team_linked: TeamLinked,
+        on_settings_changed: SettingsChanged = lambda: None,
     ) -> None:
         self._members = members
         self._watch_list = watch_list
@@ -130,6 +133,7 @@ class MemberFlow:
         self._reference = reference
         self._squads = squads
         self._on_team_linked = on_team_linked
+        self._on_settings_changed = on_settings_changed
         self._states: dict[int, ChatState] = {}
         self._commands: dict[str, CommandHandler] = {
             "/start": self._start,
@@ -221,6 +225,7 @@ class MemberFlow:
             self._ask_tz(turn)
         elif member.joining:
             await self._members.activate(member.chat_id)
+            self._on_settings_changed()
             log.info("member %d finished setup", member.number)
             turn.say(texts.all_set(member.team_name or "", _summary(member)))
         else:
@@ -321,6 +326,7 @@ class MemberFlow:
             turn.say(texts.STALE_BUTTON)
             return
         await self._members.set_timezone(turn.member.chat_id, zone)
+        self._on_settings_changed()
         await self._advance(turn)
 
     async def _on_tz_text(self, turn: Turn, text: str) -> None:
@@ -330,6 +336,7 @@ class MemberFlow:
             return
         turn.state.step = None
         await self._members.set_timezone(turn.member.chat_id, zone)
+        self._on_settings_changed()
         await self._advance(turn)
 
     async def _on_confirm_leave(self, turn: Turn, choice: str) -> None:
@@ -338,6 +345,7 @@ class MemberFlow:
             return
         log.info("member %d left", turn.member.number)
         await self._members.delete(turn.member.chat_id)
+        self._on_settings_changed()
         self.forget(turn.member.chat_id)
         turn.say(texts.LEFT)
 
@@ -391,6 +399,7 @@ class MemberFlow:
             return
         chosen = time(int(match[1]), int(match[2]))
         await self._members.set_alert_time(turn.member.chat_id, chosen)
+        self._on_settings_changed()
         zone_name = turn.member.timezone
         zone = ZoneInfo(zone_name)
         send = price_alert_send_time(chosen, zone, self._clock.now().astimezone(zone).date())

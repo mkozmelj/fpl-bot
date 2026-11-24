@@ -28,6 +28,7 @@ from fplbot.jobs.member_backup import (
     MemberBackup,
 )
 from fplbot.jobs.post_deadline import PostDeadline
+from fplbot.jobs.price_alert import PriceAlerts
 from fplbot.jobs.runner import JobRunner
 from fplbot.jobs.scheduler import Scheduler, daily
 from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
@@ -89,6 +90,7 @@ class FplBotApp:
                 reference=self.reference,
                 squads=self.squads,
                 on_team_linked=on_team_linked,
+                on_settings_changed=lambda: self.scheduler.rebuild(),
             ),
         )
 
@@ -107,6 +109,19 @@ class FplBotApp:
             self.clock,
         )
 
+        async def send_to_member(chat_id: int, text: str) -> None:
+            await self.telegram.bot.send_message(chat_id, text)
+
+        # Nightly Price alerts: the scheduler runs ``planned_runs(night)`` (ticket 31).
+        self.price_alerts = PriceAlerts(
+            members=self.members,
+            watch_list=WatchListStore(self.engine),
+            squads=self.squads,
+            owner_alerts=self.owner_alerts,
+            clock=self.clock,
+            send=send_to_member,
+        )
+
         # Scheduled jobs: each feature adds a planner (see jobs/scheduler.py).
         self.completions = CompletionStore(self.engine)
         self.scheduler = Scheduler(self.clock, self.jobs)
@@ -118,6 +133,7 @@ class FplBotApp:
             completions=self.completions,
         )
         self.scheduler.add(self.post_deadline.plan)
+        self.scheduler.add(self.price_alerts.plan)
         self.scheduler.add(
             daily(MEMBER_BACKUP_JOB, self.member_backup.run, MEMBER_BACKUP_AT, MEMBER_BACKUP_ZONE)
         )
