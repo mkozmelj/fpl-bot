@@ -177,3 +177,19 @@ class WatchedFootballer(Base):
     )
     footballer_id: Mapped[int] = mapped_column(Integer)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+# --- Job completion rows (ticket 31): one per idempotent job and period ---
+
+
+class JobCompletion(Base):
+    """An idempotent job finished for one period: a Gameweek (``gw11``) for ``picks``, ``elite``
+    and ``gw_final``, or a night (``2026-11-23``) for ``price_archive``. Written through
+    ``store/completions.py``; the startup catch-up runs whatever has no row yet."""
+
+    __tablename__ = "job_completions"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    job: Mapped[str] = mapped_column(String(32), primary_key=True)
+    period: Mapped[str] = mapped_column(String(16), primary_key=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

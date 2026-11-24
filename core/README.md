@@ -27,7 +27,9 @@ core/
                                  texts.py (all wording), rate_limit.py,
                                  owner_alerts.py (deduplicated owner incident DMs)
     jobs/                        runner.py (JobRunner: runs a job, reports outcome to the
-                                 owner); scheduled jobs arrive with ticket 31
+                                 owner), scheduler.py (planner registry, no persisted
+                                 store), post_deadline.py (picks job, deadline refreshes,
+                                 startup catch-up), backfill.py (join backfill)
   tests/
     harness.py                   THE test seam (see below)
     conftest.py                  throwaway database + `bot` fixture
@@ -114,9 +116,13 @@ message offering it; `on=message` taps an older, stale keyboard). Shortcuts:
 needs a fixture under `fixtures/fpl/entry/`). `await bot.restart()` starts a fresh process on
 the same database and fakes, to test what survives in memory.
 
-Extending the harness: scheduled-job ticks belong in `BotHarness` (`advance` is where due jobs
-should run once the scheduler exists). `FakeTelegram._result` answers Bot API methods; add a case when the bot
-starts calling a new method whose result it reads.
+Scheduled jobs: `await bot.start_scheduling()` starts the bot's scheduler as production does at
+startup (startup refresh and catch-up, then the plan); from then on `bot.advance(delta)` fires
+due jobs in simulated time, and `bot.restart()` keeps scheduling on. It is off by default so tests
+that script FPL answers are not disturbed by scheduled fetches. A feature adds its jobs by
+registering a planner (`app.scheduler.add`, see `jobs/scheduler.py`).
+`FakeTelegram._result` answers Bot API methods; add a case when the bot starts calling a new
+method whose result it reads.
 
 ## FPL fixtures
 

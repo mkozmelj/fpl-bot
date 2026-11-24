@@ -3,7 +3,8 @@
 A test drives the real bot (``FplBotApp``) the way Telegram and time would:
 
 - ``chat.send(text)`` feeds a Telegram update into the bot and waits until it is handled;
-- ``bot.advance(delta)`` moves the fake clock (scheduled-job ticks hook in here, ticket 31);
+- ``bot.advance(delta)`` moves the fake clock; once ``bot.start_scheduling()`` was called, the
+  bot's scheduled jobs (``app.scheduler``) fire on the way, as they would in production;
 - the fake FPL transport (``bot.fpl``) serves recorded fixtures from ``tests/fixtures/fpl``,
   and ``bot.fpl.respond(path, ...)`` scripts awkward answers (403, 429, 503 "updating");
 - Postgres is real: a throwaway database per test session, emptied before every test.
@@ -234,6 +235,7 @@ class BotHarness:
     logs: list[str] = field(default_factory=list[str])
     _update_ids: count[int] = field(default_factory=lambda: count(1))
     _driven: set[asyncio.Task[Any]] = field(default_factory=set[asyncio.Task[Any]])
+    _scheduling: bool = False
 
     @property
     def owner(self) -> Chat:
@@ -254,6 +256,14 @@ class BotHarness:
             self.clock.wake_next()
             await self._settle()
         self.clock.move_to(target)
+
+    async def start_scheduling(self) -> None:
+        """Start the bot's scheduled jobs as production does at startup (startup refresh and
+        catch-up first, then the plan), and keep them running across ``restart``. Off by default
+        so tests that script FPL answers are not disturbed by scheduled fetches."""
+        self._scheduling = True
+        self.app.start_scheduling()
+        await self._settle()
 
     def start_job(self, name: str, job: Job, priority: Priority = Priority.ROUTINE) -> None:
         """Start a job in the background; it runs as ``advance`` moves time."""
@@ -302,7 +312,11 @@ class BotHarness:
                 if isinstance(waiter.future, asyncio.Task) and waiter.future in awaited:
                     awaited[waiter.future].add(task)
 
-        work = {task for task in (*self.app.jobs.running, *self._driven) if not task.done()}
+        work = {
+            task
+            for task in (*self.app.jobs.running, *self.app.scheduler.tasks, *self._driven)
+            if not task.done()
+        }
         # Waiting for a held lock counts as parked: the holder is either awake work itself
         # (so we keep settling) or asleep on the clock (so time has to move on).
         parked = {task for task in tasks if self.clock.is_asleep(task) or _waiting_for_lock(task)}
@@ -326,6 +340,9 @@ class BotHarness:
             self.config, clock=self.clock, fpl_transport=self.fpl, telegram_request=self.telegram
         )
         await self.app.__aenter__()
+        if self._scheduling:
+            self.app.start_scheduling()
+            await self._settle()
 
     async def invited_friend(self, user_id: int) -> Chat:
         """A friend who has just redeemed an owner's invite: allow-listed, setup not started."""
