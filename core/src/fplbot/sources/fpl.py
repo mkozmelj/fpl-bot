@@ -20,7 +20,7 @@ import json
 import logging
 import random
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -152,6 +152,18 @@ class FplBadData(FplError):
     code = "FPL-BAD-DATA"
 
 
+class NewSeasonWaiting(FplError):
+    """``bootstrap-static`` already shows a new season that the owner has not rolled over to
+    (ticket 40): its data must not be stored under the current season's key. Jobs pause (the
+    runner does not report it as a failure); interactive lookups treat it as unavailable."""
+
+    code = "NEW-SEASON"
+
+
+# Sees every ``bootstrap-static`` before a caller gets it; may raise ``NewSeasonWaiting``.
+type BootstrapCheck = Callable[[dict[str, Any]], Awaitable[None]]
+
+
 class PoliteFplClient:
     def __init__(self, transport: FplTransport, clock: Clock) -> None:
         self._transport = transport
@@ -246,6 +258,7 @@ class _Bootstrap:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     data: dict[str, Any] | None = None
     fetched_at: datetime | None = None
+    check: BootstrapCheck | None = None
 
 
 _BOOTSTRAP_REQUIRED = ("events", "teams", "elements", "element_types")
@@ -269,6 +282,11 @@ class FplSource:
     def with_priority(self, priority: Priority) -> FplSource:
         return FplSource(self._client, priority, _bootstrap=self._bootstrap)
 
+    def check_bootstrap_with(self, check: BootstrapCheck) -> None:
+        """Pass every ``bootstrap-static`` (fresh or from memory) through ``check`` before any
+        view's caller gets it (ticket 40: the season guard)."""
+        self._bootstrap.check = check
+
     async def get_json(self, path: str) -> Any | None:
         """Decoded JSON for ``path``; ``None`` when FPL has no such resource (404)."""
         response = await self._client.get(path, self._priority)
@@ -286,16 +304,25 @@ class FplSource:
         async with cache.lock:
             now = self._client.clock.now()
             if cache.data is not None and cache.fetched_at and now - cache.fetched_at < max_age:
-                return cache.data
-            data = await self.get_json("bootstrap-static/")
-            if not isinstance(data, dict) or any(
-                not isinstance(data.get(key), list)  # pyright: ignore[reportUnknownMemberType]
-                for key in _BOOTSTRAP_REQUIRED
-            ):
-                raise FplBadData(200)
-            bootstrap: dict[str, Any] = data  # pyright: ignore[reportUnknownVariableType]
-            cache.data, cache.fetched_at = bootstrap, now
-            return bootstrap
+                bootstrap = cache.data
+            else:
+                bootstrap = await self._fetch_bootstrap()
+                cache.data, cache.fetched_at = bootstrap, now
+        return await self._checked(bootstrap)
+
+    async def _fetch_bootstrap(self) -> dict[str, Any]:
+        data = await self.get_json("bootstrap-static/")
+        if not isinstance(data, dict) or any(
+            not isinstance(data.get(key), list)  # pyright: ignore[reportUnknownMemberType]
+            for key in _BOOTSTRAP_REQUIRED
+        ):
+            raise FplBadData(200)
+        return data  # pyright: ignore[reportUnknownVariableType]
+
+    async def _checked(self, bootstrap: dict[str, Any]) -> dict[str, Any]:
+        if self._bootstrap.check is not None:
+            await self._bootstrap.check(bootstrap)
+        return bootstrap
 
     async def reference(self, max_age: timedelta = BOOTSTRAP_MAX_AGE) -> FplReference:
         """Gameweeks, clubs and Footballers from the in-memory ``bootstrap-static``."""

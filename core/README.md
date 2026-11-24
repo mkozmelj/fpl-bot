@@ -171,6 +171,12 @@ Add a revision under `src/fplbot/store/migrations/versions/` (hand-written or
 give every new table a `season` column. Migrations must be backward-compatible with the previous
 image (ADR 0003): expand, then contract.
 
+Every new table must also be listed in `store/seasons.py`, in `CLEARED_AT_ROLLOVER` (the owner's
+`/rollover` deletes its rows of the season that ended) or `KEPT_AT_ROLLOVER` (rows stay under
+their season key); `tests/test_season_rollover.py` fails until it is. The current season comes
+from the `seasons` table (pinned from the first `bootstrap-static`, changed only by `/rollover`),
+never from the calendar: read it with `season_of(now)`.
+
 CI enforces this with `uv run python -m fplbot.store.migration_check`: an `upgrade()` that drops
 or renames a table or column (Alembic ops or raw SQL) fails unless the module says
 `contract_step = True`. Write that contract migration only once no deployed image reads the old

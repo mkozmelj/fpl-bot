@@ -538,6 +538,62 @@ def online(version: str) -> str:
     return f"online {version}"
 
 
+# --- Season rollover (ticket 40) ---
+
+
+def new_season_checklist(season: str, current: str) -> str:
+    return (
+        f"New FPL season detected: {season}. bootstrap-static shows its GW1. Price alerts, "
+        "scheduled FPL jobs and advice commands are paused until you roll over.\n"
+        "Checklist:\n"
+        f"1. Check FPL's {season} data looks complete (Footballers, clubs, fixtures).\n"
+        "2. Deploy any code changes the new season needs.\n"
+        f"3. Send /rollover and confirm. Members (team ID, chat, timezone, alert time) and "
+        f"{current} aggregates are kept; Rival picks, Followed leagues and Member and Rival "
+        "history are cleared.\n"
+        "4. Each Member is then asked once to reconfirm their Goal and league."
+    )
+
+
+NEW_SEASON_PAUSED = (
+    "A new FPL season is being set up, so this is paused for now. I'll message you when it's ready."
+)
+
+
+def rollover_ask(season: str, current: str) -> str:
+    return (
+        f"Roll over to the {season} season?\n"
+        f"Kept: Members (team ID, chat, timezone, alert time) and the {current} aggregates, "
+        "under their season.\n"
+        "Cleared: Rival picks, Followed leagues, and Member and Rival history.\n"
+        "Then each Member is asked once to reconfirm their Goal and league."
+    )
+
+
+def rollover_confirm_button(season: str) -> str:
+    return f"Roll over to {season}"
+
+
+ROLLOVER_CANCEL_BUTTON = "Cancel"
+ROLLOVER_CANCELLED = "Okay, no rollover. Send /rollover when you're ready."
+
+
+def rollover_nothing_waiting(current: str) -> str:
+    return f"No new season to roll over to: {current} is the current season."
+
+
+def rolled_over(ended: str, started: str, members: int) -> str:
+    noun = "Member" if members == 1 else "Members"
+    return (
+        f"Season {started} started. {ended} aggregates are kept under {ended}. "
+        f"Asked {members} {noun} to reconfirm their Goal."
+    )
+
+
+def reconfirm_goal(season: str) -> str:
+    return f"The {season} FPL season is set up. Is your Goal still right for it?\n\n{ASK_GOAL}"
+
+
 def storage_warning(size_mb: float, limit_mb: int, percent: int) -> str:
     return (
         f"Neon storage is at {percent}% ({size_mb:.1f} MB of {limit_mb} MB). Check which tables "

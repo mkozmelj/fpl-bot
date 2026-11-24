@@ -4,7 +4,8 @@ replies out.
 ``telegram.py`` adapts python-telegram-bot updates to ``Conversation.respond`` and
 ``Conversation.press``; group chats never reach this module. Strangers get silence: an empty
 reply list. Members are handed to ``MemberFlow`` (setup, settings, ``/leave``). Owner-only
-commands (``/invite``, ``/accuracy``) get silence from anyone else, Members included.
+commands (``/invite``, ``/accuracy``, ``/rollover``) get silence from strangers; Members get
+silence for ``/accuracy`` and "unknown command" for the others.
 """
 
 import logging
@@ -20,12 +21,13 @@ from fplbot.delivery.messages import Button, Incoming, Press, Reply
 from fplbot.delivery.price_accuracy import render_accuracy
 from fplbot.delivery.rate_limit import AttemptLimiter
 from fplbot.delivery.rivals import RivalGaps
+from fplbot.delivery.rollover import OwnerRollover, SendReplies
 from fplbot.sources.fpl import FplSource
 from fplbot.store.leagues import LeagueStore
 from fplbot.store.members import Joined, MemberStore, Refusal
 from fplbot.store.price_history import PriceHistoryStore
 from fplbot.store.reference import ReferenceStore
-from fplbot.store.seasons import season_of
+from fplbot.store.seasons import Seasons, season_of
 from fplbot.store.squads import SquadStore
 from fplbot.store.watch_list import WatchListStore
 
@@ -57,6 +59,9 @@ class Conversation:
         price_history: PriceHistoryStore,
         on_settings_changed: SettingsChanged = lambda: None,
         on_goal_changed: GoalChanged = lambda: None,
+        seasons: Seasons,
+        send_replies: SendReplies,
+        on_rolled_over: Callable[[], None] = lambda: None,
         owner_status: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._owner_id = owner_id
@@ -77,6 +82,14 @@ class Conversation:
             on_team_linked=on_team_linked,
             on_settings_changed=on_settings_changed,
             on_goal_changed=on_goal_changed,
+            new_season_waiting=lambda: seasons.waiting,
+        )
+        self._rollover = OwnerRollover(
+            seasons=seasons,
+            members=members,
+            ask_goal_again=self._member_flow.ask_goal_again,
+            send=send_replies,
+            on_rolled_over=on_rolled_over,
         )
 
     async def respond(self, message: Incoming, bot_username: str) -> list[Reply]:
@@ -98,6 +111,9 @@ class Conversation:
                 return []
             return [Reply(await self._accuracy(now))]
 
+        if command == "/rollover" and message.user_id == self._owner_id:
+            return self._rollover.ask()
+
         member = await self._members.get(message.chat_id)
         if member is not None:
             return await self._member_flow.on_text(member, command, argument)
@@ -107,6 +123,8 @@ class Conversation:
         return []
 
     async def press(self, press: Press) -> list[Reply]:
+        if press.user_id == self._owner_id and OwnerRollover.owns(press.data):
+            return await self._rollover.press(press.data)
         member = await self._members.get(press.chat_id)
         if member is None:
             return []
