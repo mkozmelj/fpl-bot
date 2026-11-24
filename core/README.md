@@ -60,6 +60,9 @@ uv run python -m fplbot             # long-poll Telegram; Ctrl-C to stop
 Optional: `FPL_FIXTURES_DIR` points the fake source at another fixture directory.
 `BACKUP_AGE_PUBLIC_KEY` (an `age1...` public key) turns on the nightly encrypted Member backup
 to the owner's chat; unset, the owner is told once that backups are off.
+`HEARTBEAT_URL` turns on a ping every 5 minutes while the scheduler runs; `GIT_SHA` is the commit
+in the `ready sha=<commit>` startup line and `/status`; `DATABASE_STORAGE_LIMIT_MB` (default 1024)
+is the storage the owner is warned about at 70%.
 `FPL_SOURCE=live` (the default) calls the real FPL API through the polite client: at most 1
 request a second, a generic browser User-Agent, backoff on 429/5xx, never a retry on 403.
 

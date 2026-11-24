@@ -76,6 +76,11 @@ class Scheduler:
         """The scheduler's own task while it runs (the test harness settles it)."""
         return {self._loop} if self._loop is not None and not self._loop.done() else set()
 
+    @property
+    def running(self) -> bool:
+        """Whether the scheduler's loop is alive (started, not stopped, not crashed)."""
+        return not self._stopped and self._loop is not None and not self._loop.done()
+
     def start(self) -> None:
         self._stopped = False
         self._restart()

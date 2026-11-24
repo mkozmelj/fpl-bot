@@ -8,6 +8,7 @@ startup catch-up), and jobs check them so a re-run of a finished period does not
 """
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, datetime
 
 from sqlalchemy import select
@@ -23,6 +24,12 @@ def gameweek_period(gameweek: int) -> str:
 
 def night_period(night: date) -> str:
     return night.isoformat()
+
+
+@dataclass(frozen=True)
+class Completion:
+    period: str
+    completed_at: datetime
 
 
 class CompletionStore:
@@ -55,3 +62,25 @@ class CompletionStore:
                 .values(season=season, job=job, period=period, completed_at=at)
                 .on_conflict_do_nothing()
             )
+
+    async def latest(self, jobs: Iterable[str]) -> dict[str, Completion]:
+        """The completion of the latest period of each of ``jobs`` that has one (``/status``):
+        latest season, then latest Gameweek or night, whatever order they were completed in
+        (the startup catch-up may finish GW9 after GW10)."""
+        wanted = list(jobs)
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(
+                    JobCompletion.job,
+                    JobCompletion.season,
+                    JobCompletion.period,
+                    JobCompletion.completed_at,
+                ).where(JobCompletion.job.in_(wanted))
+            )
+            ranked: dict[str, tuple[tuple[str, int, str], Completion]] = {}
+            for job, season, period, completed_at in rows:
+                # "gw9" < "gw10" by length first; nights are ISO dates of one length.
+                rank = (season, len(period), period)
+                if job not in ranked or rank > ranked[job][0]:
+                    ranked[job] = (rank, Completion(period, completed_at))
+            return {job: completion for job, (_, completion) in ranked.items()}

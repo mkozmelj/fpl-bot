@@ -8,6 +8,7 @@ commands (``/invite``, ``/accuracy``) get silence from anyone else, Members incl
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
 from fplbot.advice.alert_time import UK
@@ -51,8 +52,10 @@ class Conversation:
         on_team_linked: TeamLinked,
         price_history: PriceHistoryStore,
         on_settings_changed: SettingsChanged = lambda: None,
+        owner_status: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._owner_id = owner_id
+        self._owner_status = owner_status
         self._members = members
         self._price_history = price_history
         self._clock = clock
@@ -77,6 +80,10 @@ class Conversation:
             log.info("invite issued")
             hours = int(INVITE_VALID_FOR.total_seconds() // 3600)
             return [Reply(texts.invite_link(bot_username, code, hours))]
+
+        # Before the Member lookup: /status must answer while the database is down.
+        if command == "/status" and message.user_id == self._owner_id and self._owner_status:
+            return [Reply(await self._owner_status())]
 
         if command == "/accuracy":
             if message.user_id != self._owner_id:

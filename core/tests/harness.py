@@ -5,6 +5,8 @@ A test drives the real bot (``FplBotApp``) the way Telegram and time would:
 - ``chat.send(text)`` feeds a Telegram update into the bot and waits until it is handled;
 - ``bot.advance(delta)`` moves the fake clock; once ``bot.start_scheduling()`` was called, the
   bot's scheduled jobs (``app.scheduler``) fire on the way, as they would in production;
+  ``bot.start_up()`` runs the whole production startup instead (Telegram poll, scheduling,
+  heartbeat pings recorded in ``bot.heartbeat.pings``, the ``ready sha=`` line);
 - the fake FPL transport (``bot.fpl``) serves recorded fixtures from ``tests/fixtures/fpl``,
   and ``bot.fpl.respond(path, ...)`` scripts awkward answers (403, 429, 503 "updating");
 - Postgres is real: a throwaway database per test session, emptied before every test.
@@ -49,6 +51,8 @@ TELEGRAM_DELETE_WINDOW = timedelta(hours=48)
 # The test bot's backup key pair (ticket 39): the bot encrypts to the public half, tests
 # decrypt with the identity.
 BACKUP_IDENTITY = pyrage.x25519.Identity.generate()
+# The commit the test bot was "deployed" from (``GIT_SHA``), for the ``ready sha=`` line.
+DEPLOY_SHA = "0123abcdef0123abcdef0123abcdef0123abcdef"
 # A Thursday evening in the 2026-27 season, between Gameweeks.
 DEFAULT_START = datetime(2026, 11, 19, 18, 0, tzinfo=UTC)
 
@@ -198,6 +202,8 @@ class FakeTelegram(BaseRequest):
         api_method = url.rsplit("/", 1)[-1]
         params: dict[str, Any] = dict(request_data.parameters) if request_data else {}
         self.calls.append(BotApiCall(api_method, params))
+        if api_method == "getUpdates":
+            return await self._long_poll(params)
         if api_method == "deleteMessage" and not self._deletable(params):
             return _bad_request("message can't be deleted for everyone")
         if request_data is not None and api_method in ("sendDocument", "editMessageMedia"):
@@ -207,6 +213,14 @@ class FakeTelegram(BaseRequest):
                 return _bad_request("message to edit not found")
             return 200, json.dumps({"ok": True, "result": self._document_json(sent)}).encode()
         return 200, json.dumps({"ok": True, "result": self._result(api_method, params)}).encode()
+
+    async def _long_poll(self, params: Mapping[str, Any]) -> tuple[int, bytes]:
+        """``getUpdates`` while the bot polls (``bot.start_up()``): no update ever arrives this
+        way (tests feed updates directly), so a long poll just waits until it is cancelled at
+        shutdown. A poll without a timeout (PTB's last one on stopping) answers at once."""
+        if float(params.get("timeout") or 0) > 0:
+            await asyncio.Event().wait()
+        return 200, json.dumps({"ok": True, "result": []}).encode()
 
     def _new_document(self, request_data: RequestData) -> SentDocument:
         params = request_data.parameters
@@ -283,6 +297,18 @@ def _bad_request(description: str) -> tuple[int, bytes]:
     return 400, json.dumps(error).encode()
 
 
+class FakeHeartbeatMonitor:
+    """Stands in for the owner's uptime monitor: records each heartbeat ping (when, which URL)
+    instead of sending it."""
+
+    def __init__(self, clock: FakeClock) -> None:
+        self._clock = clock
+        self.pings: list[tuple[datetime, str]] = []
+
+    async def ping(self, url: str) -> None:
+        self.pings.append((self._clock.now(), url))
+
+
 @dataclass
 class Chat:
     """A Telegram chat as seen by one user: send text in, read what the bot sent back."""
@@ -343,11 +369,13 @@ class BotHarness:
     clock: FakeClock
     telegram: FakeTelegram
     fpl: FakeFplTransport
+    heartbeat: FakeHeartbeatMonitor
     logs: list[str] = field(default_factory=list[str])
     _update_ids: count[int] = field(default_factory=lambda: count(1))
     _driven: set[asyncio.Task[Any]] = field(default_factory=set[asyncio.Task[Any]])
     _scheduling: bool = False
     _price_history: bool = True
+    _started: bool = False
 
     @property
     def owner(self) -> Chat:
@@ -381,9 +409,19 @@ class BotHarness:
         await self._settle()
 
     def _start_scheduling(self) -> None:
+        self._leave_out_features()
+        self.app.start_scheduling()
+
+    def _leave_out_features(self) -> None:
         if not self._price_history:
             self.app.scheduler.remove(self.app.price_archive.plan)
-        self.app.start_scheduling()
+
+    async def start_up(self) -> None:
+        """Start the bot as production does (``app.start()``: migration check, Telegram poll,
+        scheduling and heartbeat, then the ``ready sha=`` line and the owner's "online" DM), and
+        do it again on every ``restart``."""
+        self._started = self._scheduling = True
+        await self._until_done(asyncio.create_task(self.app.start()))
 
     def start_job(self, name: str, job: Job, priority: Priority = Priority.ROUTINE) -> None:
         """Start a job in the background; it runs as ``advance`` moves time."""
@@ -434,7 +472,12 @@ class BotHarness:
 
         work = {
             task
-            for task in (*self.app.jobs.running, *self.app.scheduler.tasks, *self._driven)
+            for task in (
+                *self.app.jobs.running,
+                *self.app.scheduler.tasks,
+                *self.app.heartbeat.tasks,
+                *self._driven,
+            )
             if not task.done()
         }
         # Waiting for a held lock counts as parked: the holder is either awake work itself
@@ -460,10 +503,17 @@ class BotHarness:
         if config is not None:
             self.config = config
         self.app = FplBotApp(
-            self.config, clock=self.clock, fpl_transport=self.fpl, telegram_request=self.telegram
+            self.config,
+            clock=self.clock,
+            fpl_transport=self.fpl,
+            telegram_request=self.telegram,
+            heartbeat_pinger=self.heartbeat,
         )
         await self.app.__aenter__()
-        if self._scheduling:
+        if self._started:
+            self._leave_out_features()
+            await self._until_done(asyncio.create_task(self.app.start()))
+        elif self._scheduling:
             self._start_scheduling()
             await self._settle()
 
@@ -599,14 +649,24 @@ async def running_bot(database_url: str) -> AsyncGenerator[BotHarness]:
             "DATABASE_URL": database_url,
             "OWNER_TELEGRAM_ID": str(OWNER_ID),
             "FPL_SOURCE": "fake",
+            "GIT_SHA": DEPLOY_SHA,
             "BACKUP_AGE_PUBLIC_KEY": str(BACKUP_IDENTITY.to_public()),
         }
     )
     clock = FakeClock()
     telegram = FakeTelegram(clock)
     fpl = FakeFplTransport(clock=clock)
-    app = FplBotApp(config, clock=clock, fpl_transport=fpl, telegram_request=telegram)
-    harness = BotHarness(app=app, config=config, clock=clock, telegram=telegram, fpl=fpl)
+    heartbeat = FakeHeartbeatMonitor(clock)
+    app = FplBotApp(
+        config,
+        clock=clock,
+        fpl_transport=fpl,
+        telegram_request=telegram,
+        heartbeat_pinger=heartbeat,
+    )
+    harness = BotHarness(
+        app=app, config=config, clock=clock, telegram=telegram, fpl=fpl, heartbeat=heartbeat
+    )
 
     root = logging.getLogger()
     previous_level = root.level
