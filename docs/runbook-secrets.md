@@ -12,7 +12,7 @@ Railway, the GitHub Environment and the owner's password manager.
 | `DATABASE_URL` (Neon pooled URL) | Railway sealed variable | the bot, the pre-deploy migration |
 | `OWNER_TELEGRAM_ID` | Railway sealed variable (not secret, kept with the others) | the bot |
 | `ANTHROPIC_API_KEY` (optional, not used in Phase 1) | Railway sealed variable | the bot |
-| Backup `age` public key | Railway variable (public, not secret) | the nightly backup |
+| `BACKUP_AGE_PUBLIC_KEY` (backup `age` public key, `age1...`) | Railway variable (public, not secret) | the nightly backup |
 | Backup `age` private key | owner's password manager only | the restore drill |
 | Railway project token (production environment) | GitHub Environment `production`, restricted to `main` | the deploy job; the **only** CI secret |
 
@@ -73,7 +73,9 @@ fresh `ready sha=` line and answers `/status`.
 
 1. `age-keygen -o backup.key` on a trusted machine; store the private key in the password manager,
    then delete the file.
-2. Railway → Variables: replace the backup public key, deploy.
+2. Railway → Variables: set `BACKUP_AGE_PUBLIC_KEY` to the new public key (the `age1...` line
+   `age-keygen` prints), deploy. A malformed key stops the bot at startup with a config error
+   naming the variable.
 3. Keep the old private key until the last backup made with it has rolled out of the owner chat
    (7 days), then delete it.
 
@@ -81,6 +83,19 @@ fresh `ready sha=` line and answers `/status`.
 
 Not secret, but it decides who may `/invite`. Change it only when the owner account changes:
 Railway → Variables → `OWNER_TELEGRAM_ID`, deploy.
+
+## Nightly Member backup
+
+Every night at 04:00 UK time the bot exports the Member and config tables (`members`, with each
+Member's Goal and settings; `invites`; `watch_list`) as SQL, encrypts it with `age` to
+`BACKUP_AGE_PUBLIC_KEY` and sends it to the owner chat as `fplbot-members-<date>.sql.age`. The
+caption gives the time taken and the Member count. The chat keeps the last 7: Telegram lets a
+bot delete only messages under 48 hours old, so once 7 backup messages exist, each new backup
+overwrites the message holding the oldest one (an edit, so no notification and it stays at that
+message's place in the chat). The latest backup is the one whose caption has the latest date,
+not necessarily the lowest in the chat. Deleting a backup message by hand is fine; the bot sends
+a new message next time. Without `BACKUP_AGE_PUBLIC_KEY` the backup is skipped and the owner is
+told once (again after the key has been set and removed).
 
 ## Restore drill
 

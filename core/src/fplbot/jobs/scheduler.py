@@ -19,7 +19,8 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from fplbot.clock import Clock
 from fplbot.jobs.runner import Job, JobRunner
@@ -135,6 +136,40 @@ class Scheduler:
                 continue
             task = self._jobs.start(run.name, run.job, run.priority)
             task.add_done_callback(lambda _: self.rebuild())
+
+
+def daily_occurrences(now: datetime, at: time, zone: ZoneInfo) -> tuple[datetime, datetime]:
+    """The latest moment at or before ``now`` that was ``at`` local time in ``zone``, and the
+    next one after ``now`` (DST-safe: each is built from its own local date)."""
+    today = now.astimezone(zone).date()
+    candidates = [
+        datetime.combine(today + timedelta(days=offset), at, tzinfo=zone).astimezone(UTC)
+        for offset in (-1, 0, 1)
+    ]
+    previous = max(c for c in candidates if c <= now)
+    upcoming = min(c for c in candidates if c > now)
+    return previous, upcoming
+
+
+def daily(
+    name: str,
+    job: Job,
+    at: time,
+    zone: ZoneInfo,
+    *,
+    priority: Priority = Priority.ROUTINE,
+    grace: timedelta = DEFAULT_GRACE,
+) -> Planner:
+    """A planner for a job that runs once a day at ``at`` local time in ``zone``."""
+
+    async def plan(now: datetime) -> list[PlannedRun]:
+        return [
+            PlannedRun(at=moment, name=name, job=job, priority=priority, grace=grace)
+            for moment in daily_occurrences(now, at, zone)
+        ]
+
+    plan.__qualname__ = f"daily {name}"
+    return plan
 
 
 def _name(planner: Planner) -> str:

@@ -20,12 +20,13 @@ import logging
 import re
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from itertools import count
 from pathlib import Path
 from typing import Any
 
+import pyrage
 from sqlalchemy import text
 from telegram.request import BaseRequest, RequestData
 
@@ -43,6 +44,11 @@ SETTLE_TIMEOUT_SECONDS = 5.0
 BOT_USERNAME = "FplTestBot"
 # Every simulated sender is called this, so tests can check names never leak into logs.
 SENDER_NAME = "Pseudonymia"
+# Telegram lets a bot delete a message only while it is younger than this.
+TELEGRAM_DELETE_WINDOW = timedelta(hours=48)
+# The test bot's backup key pair (ticket 39): the bot encrypts to the public half, tests
+# decrypt with the identity.
+BACKUP_IDENTITY = pyrage.x25519.Identity.generate()
 # A Thursday evening in the 2026-27 season, between Gameweeks.
 DEFAULT_START = datetime(2026, 11, 19, 18, 0, tzinfo=UTC)
 
@@ -129,14 +135,45 @@ class SentMessage:
         return [(str(button["callback_data"]), button) for row in rows for button in row]
 
 
+@dataclass(frozen=True)
+class SentDocument:
+    """A file the bot sent (``sendDocument``), with its bytes as uploaded."""
+
+    chat_id: int
+    message_id: int
+    filename: str
+    content: bytes
+    caption: str | None = None
+
+
 class FakeTelegram(BaseRequest):
     """Stands in for python-telegram-bot's HTTP layer: records every Bot API call and answers
     with plausible results, so the real PTB ``Application`` runs offline."""
 
-    def __init__(self) -> None:
+    def __init__(self, clock: FakeClock) -> None:
         self.calls: list[BotApiCall] = []
         self.sent_messages: list[SentMessage] = []
+        self.sent_documents: list[SentDocument] = []
+        # (chat_id, message_id) of messages gone from the chat: removed by the bot
+        # (``deleteMessage``) or by the user (``delete_by_hand``).
+        self.deleted: set[tuple[int, int]] = set()
+        self._clock = clock
         self._message_ids = count(1)
+        self._sent_at: dict[tuple[int, int], datetime] = {}
+
+    def delete_by_hand(self, chat_id: int, message_id: int) -> None:
+        """The user deletes one of the bot's messages in their chat; editing it then fails."""
+        self.deleted.add((chat_id, message_id))
+
+    def _new_message_id(self, chat_id: int) -> int:
+        message_id = next(self._message_ids)
+        self._sent_at[chat_id, message_id] = self._clock.now()
+        return message_id
+
+    def _deletable(self, params: Mapping[str, Any]) -> bool:
+        """Telegram lets a bot delete a message only while it is under 48 hours old."""
+        sent_at = self._sent_at.get((int(params["chat_id"]), int(params["message_id"])))
+        return sent_at is not None and self._clock.now() - sent_at < TELEGRAM_DELETE_WINDOW
 
     @property
     def read_timeout(self) -> float | None:
@@ -161,16 +198,74 @@ class FakeTelegram(BaseRequest):
         api_method = url.rsplit("/", 1)[-1]
         params: dict[str, Any] = dict(request_data.parameters) if request_data else {}
         self.calls.append(BotApiCall(api_method, params))
+        if api_method == "deleteMessage" and not self._deletable(params):
+            return _bad_request("message can't be deleted for everyone")
+        if request_data is not None and api_method in ("sendDocument", "editMessageMedia"):
+            if api_method == "sendDocument":
+                sent = self._new_document(request_data)
+            elif (sent := self._edited_document(request_data)) is None:
+                return _bad_request("message to edit not found")
+            return 200, json.dumps({"ok": True, "result": self._document_json(sent)}).encode()
         return 200, json.dumps({"ok": True, "result": self._result(api_method, params)}).encode()
+
+    def _new_document(self, request_data: RequestData) -> SentDocument:
+        params = request_data.parameters
+        filename, content = self._upload(request_data)
+        chat_id = int(str(params["chat_id"]))
+        sent = SentDocument(
+            chat_id=chat_id,
+            message_id=self._new_message_id(chat_id),
+            filename=filename,
+            content=content,
+            caption=str(params["caption"]) if "caption" in params else None,
+        )
+        self.sent_documents.append(sent)
+        return sent
+
+    def _edited_document(self, request_data: RequestData) -> SentDocument | None:
+        """``editMessageMedia`` replacing a document the bot sent; None if it is not there."""
+        params = request_data.parameters
+        where = (int(str(params["chat_id"])), int(str(params["message_id"])))
+        media: Any = params["media"]
+        if isinstance(media, str):
+            media = json.loads(media)
+        for index, old in enumerate(self.sent_documents):
+            if (old.chat_id, old.message_id) == where and where not in self.deleted:
+                filename, content = self._upload(request_data)
+                caption = media.get("caption")
+                self.sent_documents[index] = edited = replace(
+                    old, filename=filename, content=content, caption=caption
+                )
+                return edited
+        return None
+
+    @staticmethod
+    def _upload(request_data: RequestData) -> tuple[str, bytes]:
+        (filename, content, *_), *_ = request_data.multipart_data.values()
+        return str(filename), content if isinstance(content, bytes) else content.read()
+
+    @staticmethod
+    def _document_json(sent: SentDocument) -> dict[str, Any]:
+        return {
+            "message_id": sent.message_id,
+            "date": 0,
+            "chat": {"id": sent.chat_id, "type": "private"},
+            "document": {"file_id": f"file-{sent.message_id}", "file_unique_id": "u"},
+            "caption": sent.caption,
+        }
 
     def _result(self, api_method: str, params: Mapping[str, Any]) -> Any:
         if api_method == "getMe":
             return {"id": 1, "is_bot": True, "first_name": "FPL test bot", "username": BOT_USERNAME}
+        if api_method == "deleteMessage":
+            self.deleted.add((int(params["chat_id"]), int(params["message_id"])))
+            return True
         if api_method == "sendMessage":
+            chat_id = int(params["chat_id"])
             sent = SentMessage(
-                chat_id=int(params["chat_id"]),
+                chat_id=chat_id,
                 text=str(params["text"]),
-                message_id=next(self._message_ids),
+                message_id=self._new_message_id(chat_id),
                 reply_markup=params.get("reply_markup"),
             )
             self.sent_messages.append(sent)
@@ -181,6 +276,11 @@ class FakeTelegram(BaseRequest):
                 "text": sent.text,
             }
         return True
+
+
+def _bad_request(description: str) -> tuple[int, bytes]:
+    error = {"ok": False, "error_code": 400, "description": f"Bad Request: {description}"}
+    return 400, json.dumps(error).encode()
 
 
 @dataclass
@@ -213,6 +313,17 @@ class Chat:
         messages = self.messages
         assert messages, f"chat {self.chat_id} received nothing"
         return messages[-1]
+
+    @property
+    def documents(self) -> list[SentDocument]:
+        """Files the bot sent to this chat that are still there (not deleted)."""
+        telegram = self.harness.telegram
+        return [
+            document
+            for document in telegram.sent_documents
+            if document.chat_id == self.chat_id
+            and (document.chat_id, document.message_id) not in telegram.deleted
+        ]
 
     @property
     def replies(self) -> list[str]:
@@ -332,10 +443,13 @@ class BotHarness:
                     changed = True
         return [task for task in work if task not in parked]
 
-    async def restart(self) -> None:
+    async def restart(self, config: Config | None = None) -> None:
         """Stop the bot and start a fresh process against the same database, clock, Telegram
-        and FPL fakes: anything held only in memory is gone."""
+        and FPL fakes: anything held only in memory is gone. Pass ``config`` to start it with
+        other settings (e.g. ``dataclasses.replace(bot.config, backup_public_key=None)``)."""
         await self.app.__aexit__(None, None, None)
+        if config is not None:
+            self.config = config
         self.app = FplBotApp(
             self.config, clock=self.clock, fpl_transport=self.fpl, telegram_request=self.telegram
         )
@@ -476,9 +590,11 @@ async def running_bot(database_url: str) -> AsyncGenerator[BotHarness]:
             "DATABASE_URL": database_url,
             "OWNER_TELEGRAM_ID": str(OWNER_ID),
             "FPL_SOURCE": "fake",
+            "BACKUP_AGE_PUBLIC_KEY": str(BACKUP_IDENTITY.to_public()),
         }
     )
-    clock, telegram = FakeClock(), FakeTelegram()
+    clock = FakeClock()
+    telegram = FakeTelegram(clock)
     fpl = FakeFplTransport(clock=clock)
     app = FplBotApp(config, clock=clock, fpl_transport=fpl, telegram_request=telegram)
     harness = BotHarness(app=app, config=config, clock=clock, telegram=telegram, fpl=fpl)

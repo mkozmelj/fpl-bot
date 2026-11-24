@@ -56,6 +56,8 @@ uv run python -m fplbot             # long-poll Telegram; Ctrl-C to stop
 ```
 
 Optional: `FPL_FIXTURES_DIR` points the fake source at another fixture directory.
+`BACKUP_AGE_PUBLIC_KEY` (an `age1...` public key) turns on the nightly encrypted Member backup
+to the owner's chat; unset, the owner is told once that backups are off.
 `FPL_SOURCE=live` (the default) calls the real FPL API through the polite client: at most 1
 request a second, a generic browser User-Agent, backoff on 429/5xx, never a retry on 403.
 
