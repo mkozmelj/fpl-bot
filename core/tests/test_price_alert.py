@@ -6,14 +6,17 @@ the shared ``bootstrap-static`` per test (synthetic likelihood codes, -5..+5, fo
 tomorrow night and the night after). The default clock is Thursday 19 Nov 2026, 18:00 UK (GMT);
 the GW11 deadline is Saturday 21 Nov, 11:00 UK.
 
-Until the scheduler (ticket 31) drives them, a test asks the Price alert for tonight's planned
-runs, moves the clock to a run's time and runs it through the harness's job helper.
+The bot's scheduler runs the alerts: every test here starts scheduling first (and lets the
+startup refresh finish before it scripts FPL answers), then lets simulated time pass through the
+night's send window.
 """
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
+
+import pytest
 
 from fplbot.sources.fpl import FplResponse
 from tests.harness import BotHarness, Chat, canned_fpl_response, fpl_fixture
@@ -22,6 +25,16 @@ UK = ZoneInfo("Europe/London")
 THURSDAY = date(2026, 11, 19)
 FRIDAY = date(2026, 11, 20)  # the night before the GW11 deadline
 BACKFILL_TIME = timedelta(minutes=1)
+STARTUP_TIME = timedelta(minutes=1)
+# After the last possible send time (23:15 UK) and its 10-minute retry window.
+NIGHT_OVER = time(23, 30)
+
+
+@pytest.fixture(autouse=True)
+async def scheduling(bot: BotHarness) -> None:
+    await bot.start_scheduling()
+    await bot.advance(STARTUP_TIME)
+
 
 type Codes = tuple[int, int] | tuple[int, int, int]
 
@@ -66,11 +79,10 @@ def uk_time(moment: datetime) -> str:
 
 
 async def run_price_alerts(bot: BotHarness, night: date = THURSDAY) -> list[str]:
-    """Run tonight's planned Price alerts in order, each at its time; their UK times."""
+    """Let the UK night ``night`` pass until its send window is over; the UK times of its
+    planned Price alerts."""
     runs = await bot.app.price_alerts.planned_runs(night)
-    for run in runs:
-        await bot.advance(run.at - bot.clock.now())
-        await bot.run_job(run.name, run.job, run.priority)
+    await bot.advance(datetime.combine(night, NIGHT_OVER, UK) - bot.clock.now())
     return [uk_time(run.at) for run in runs]
 
 
@@ -331,3 +343,14 @@ async def test_send_times_outside_17_00_to_23_15_uk_are_clamped(bot: BotHarness)
     assert [reply.splitlines()[0] for reply in priya.replies[before:]] == [
         "Price alert · GW11 · tonight 00:00 UK"
     ]
+
+
+async def test_a_new_alert_time_counts_from_tonight(bot: BotHarness) -> None:
+    bot.fpl.respond("bootstrap-static/", bootstrap({103: (-5, 0)}))
+    alice = await ljubljana_member(bot)  # 20:00 Ljubljana: 19:00 UK
+    await bot.advance(datetime(2026, 11, 19, 18, 30, tzinfo=UK) - bot.clock.now())
+
+    await alice.send("/time 19:45")  # 18:45 UK
+    await bot.advance(datetime(2026, 11, 19, 18, 50, tzinfo=UK) - bot.clock.now())
+
+    assert alice.last_reply.startswith("Price alert · GW11 · tonight 00:00 UK")

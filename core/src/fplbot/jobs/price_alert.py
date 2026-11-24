@@ -25,6 +25,7 @@ from fplbot.delivery import texts
 from fplbot.delivery.owner_alerts import OwnerAlerts
 from fplbot.delivery.price_alert import render_price_alert
 from fplbot.jobs.runner import Job
+from fplbot.jobs.scheduler import PlannedRun
 from fplbot.sources.fpl import FplBlocked, FplError, FplGameweek, FplSource, Priority
 from fplbot.sources.price_projections import price_projections
 from fplbot.store.members import MemberRecord, MemberStore
@@ -40,14 +41,11 @@ RETRY_AFTER = timedelta(minutes=10)
 SendMessage = Callable[[int, str], Awaitable[None]]
 
 
-@dataclass(frozen=True)
-class PlannedRun:
-    """A job to run at ``at`` (for the scheduler, ticket 31)."""
-
-    at: datetime
-    name: str
-    job: Job
-    priority: Priority
+# A run fires at most this late (scheduler misfire grace), and never after 23:15 UK; at least a
+# minute so a timer waking a moment late still fires. After a restart inside this window a run
+# fires again, so keep it short.
+GRACE = timedelta(minutes=5)
+MIN_GRACE = timedelta(minutes=1)
 
 
 @dataclass(frozen=True)
@@ -74,6 +72,14 @@ class PriceAlerts:
         self._clock = clock
         self._send = send
 
+    async def plan(self, now: datetime) -> list[PlannedRun]:
+        """Planner (``Scheduler.add``): tonight's and tomorrow night's runs (UK nights)."""
+        tonight = now.astimezone(UK).date()
+        return [
+            *await self.planned_runs(tonight),
+            *await self.planned_runs(tonight + timedelta(days=1)),
+        ]
+
     async def planned_runs(self, night: date) -> list[PlannedRun]:
         """One run per distinct send time on UK night ``night``, earliest first."""
         settings = [
@@ -81,8 +87,15 @@ class PriceAlerts:
             for member in await self._members.active()
             if member.timezone
         ]
+        closes = datetime.combine(night, WINDOW_CLOSES, UK)
         return [
-            PlannedRun(at, JOB_NAME, self.job(at), Priority.PRICE_ALERT)
+            PlannedRun(
+                at,
+                JOB_NAME,
+                self.job(at),
+                Priority.PRICE_ALERT,
+                grace=max(min(GRACE, closes - at), MIN_GRACE),
+            )
             for at in send_times_on_night(settings, night)
         ]
 

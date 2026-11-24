@@ -163,3 +163,13 @@ async def test_a_backup_the_owner_deleted_by_hand_is_replaced_by_a_new_message(
     assert len(bot.owner.documents) == 7
     assert backup_dates(bot) == [f"2026-11-{day}" for day in range(21, 28)]
     assert bot.owner.replies == []
+
+
+async def test_the_backup_runs_by_itself_every_night_at_04_00_uk_time(bot: BotHarness) -> None:
+    await bot.start_scheduling()  # Thu 19 Nov 18:00 UTC
+
+    await bot.advance(timedelta(days=1, hours=10, minutes=30))  # Sat 21 Nov 04:30 UTC
+
+    assert sorted(d.caption or "" for d in bot.owner.documents) == [
+        caption_on(day).replace("18:00", "04:00") for day in (20, 21)
+    ]

@@ -9,14 +9,40 @@ whether the owner is told. Logs carry the job name and fixed code only.
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 
+from fplbot.clock import Clock
 from fplbot.delivery.owner_alerts import OwnerAlerts
-from fplbot.sources.fpl import FplBlocked, FplError, FplSource, Priority
+from fplbot.sources.fpl import FplBlocked, FplError, FplSource, FplUpdating, Priority
 
 log = logging.getLogger(__name__)
 
 Job = Callable[[FplSource], Awaitable[None]]
 JOB_ERROR = "JOB-ERROR"
+
+
+UPDATING_WAIT = timedelta(minutes=10)
+# After a deadline FPL is usually "updating" for 20-60 minutes; past this, report the job failed.
+UPDATING_GIVE_UP_AFTER = timedelta(hours=6)
+
+
+def waiting_while_updating(job: Job, clock: Clock) -> Job:
+    """``job``, restarted from the top every 10 minutes while FPL answers "The game is being
+    updated" (spec: these waits are not backoff tries). The job must be idempotent."""
+
+    async def patient(fpl: FplSource) -> None:
+        give_up = clock.now() + UPDATING_GIVE_UP_AFTER
+        while True:
+            try:
+                await job(fpl)
+                return
+            except FplUpdating:
+                if clock.now() + UPDATING_WAIT > give_up:
+                    raise
+                log.info("fpl is updating, trying again in 10 minutes")
+                await clock.sleep(UPDATING_WAIT.total_seconds())
+
+    return patient
 
 
 class JobRunner:
