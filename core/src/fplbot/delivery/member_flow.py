@@ -33,6 +33,7 @@ from fplbot.advice.league_table import league_view
 from fplbot.advice.rivals import goal_table
 from fplbot.clock import Clock
 from fplbot.delivery import texts
+from fplbot.delivery.elite import EliteGaps
 from fplbot.delivery.messages import Button, Reply
 from fplbot.delivery.rivals import RivalGaps
 from fplbot.delivery.timezones import BUTTON_ZONES, resolve_timezone
@@ -136,6 +137,7 @@ class MemberFlow:
         squads: SquadStore,
         leagues: LeagueStore,
         rival_gaps: RivalGaps,
+        elite_gaps: EliteGaps,
         on_team_linked: TeamLinked,
         on_settings_changed: SettingsChanged = lambda: None,
         on_goal_changed: GoalChanged = lambda: None,
@@ -152,6 +154,7 @@ class MemberFlow:
         self._on_settings_changed = on_settings_changed
         self._leagues = leagues
         self._rival_gaps = rival_gaps
+        self._elite_gaps = elite_gaps
         self._on_goal_changed = on_goal_changed
         self._states: dict[int, ChatState] = {}
         self._commands: dict[str, CommandHandler] = {
@@ -162,6 +165,7 @@ class MemberFlow:
             "/squad": self._squad,
             "/league": self._league,
             "/rivals": self._rivals,
+            "/gap": self._gap,
             "/goal": self._goal,
             "/tz": self._tz,
             "/time": self._time,
@@ -441,6 +445,9 @@ class MemberFlow:
 
     async def _rivals(self, turn: Turn, argument: str) -> None:
         turn.say(await self._rival_gaps.reply(turn.member, argument))
+
+    async def _gap(self, turn: Turn, argument: str) -> None:
+        turn.say(await self._elite_gaps.reply(turn.member, argument))
 
     async def _goal(self, turn: Turn, argument: str) -> None:
         self._ask_goal(turn)

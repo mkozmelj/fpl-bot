@@ -116,6 +116,8 @@ COMMANDS: list[tuple[str, str]] = [
     ("/league", "your league table"),
     ("/rivals", "where your Squad differs from your nearest Rivals"),
     ("/rivals all", ""),
+    ("/gap", "where your Squad differs from the top 10k"),
+    ("/gap captain", ""),
     ("/watch", "show your Watch list"),
     ("/watch add <name>", ""),
     ("/watch remove <name>", ""),
@@ -499,6 +501,48 @@ def rivals_opponent_captain(yours: str, theirs: str, same: bool) -> str:
     if same:
         return f"Captain: {yours} · your opponent captains him too."
     return f"Captain: you {yours}, they {theirs}."
+
+
+# --- /gap: the Elite gap (ticket 34; shape from eliteMessage in the Gap prototype) ---
+
+
+GAP_USAGE = "Use /gap for your starting XI against the top 10k, or /gap captain for captains alone."
+GAP_TEMPLATE = "No difference larger than the margin of error: you look like the template."
+
+
+def gap_captain_line(name: str, you_captain: bool, they_captain: int, edge: str) -> str:
+    """``they_captain`` in whole percent."""
+    you = "captain him" if you_captain else "don't"
+    return f"  {name}: you {you} · they {they_captain}% · {edge}"
+
+
+def gap_not_ready(cohort: str, gameweek: int) -> str:
+    return (
+        f"Elite gap · top {cohort}\nNo Elite figures yet for GW{gameweek}.\nTry /rivals meanwhile."
+    )
+
+
+def gap_no_squad(gameweek: int) -> str:
+    return (
+        f"I don't have your Squad from the GW{gameweek} deadline yet, so there's nothing to "
+        "compare. Try /gap again later."
+    )
+
+
+def gap_header(cohort: str, captain_only: bool = False) -> str:
+    return f"Elite gap · top {cohort} · {'captain' if captain_only else 'starting XI'}"
+
+
+def gap_sample(gameweek: int, sample_size: int, margin_of_error: float) -> str:
+    """``margin_of_error`` as a share (0.02 is ±2.0%)."""
+    return f"GW{gameweek} · sample {sample_size:,} · ±{margin_of_error * 100:.1f}%"
+
+
+def gap_edge_explained(cohort: str) -> str:
+    return (
+        "Edge = points per GW you gain (+) or give up (−) against the average top "
+        f"{cohort} manager, weighted by average points over the last 4 Gameweeks."
+    )
 
 
 # --- Owner /status, startup and usage warnings (ticket 38) ---

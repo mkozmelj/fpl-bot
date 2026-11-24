@@ -32,7 +32,8 @@ core/
                                  startup catch-up), backfill.py (join backfill),
                                  followed_leagues.py (Followed-league recompute),
                                  gameweek_final.py (gw-final job),
-                                 rival_picks.py, footballer_stats.py (Rival gap data)
+                                 rival_picks.py, footballer_stats.py (Rival gap data),
+                                 elite.py (Elite sampler: top 10k cohort + sample)
                                  price_alert.py, price_archive.py (price snapshots,
                                  Price-change archive, news log), member_backup.py
   tests/
@@ -117,6 +118,10 @@ Never on module calls, SQL or internal state.
 Jobs and time: `bot.run_job(name, job, priority)` runs a job through the bot's `JobRunner`
 (outcome reported to the owner as in production) and returns `True` on success;
 `bot.start_job(...)` starts one in the background. A job is `async def job(fpl: FplSource)`.
+
+The Elite sampler (ticket 34) is off in the `bot` fixture, so other tests' post-deadline runs make
+no Elite requests. Use the `elite_bot` fixture to turn it on at test scale (`TEST_ELITE_DESIGN`:
+the cohort is the first 40 managers of `leagues-classic/314/standings/`, the sample the first 20).
 
 All waiting in the bot goes through `Clock.sleep` (rate limit, backoff, scheduled waits), so it
 runs in simulated time: `bot.advance(delta)` wakes every sleeper due within `delta` in order, and

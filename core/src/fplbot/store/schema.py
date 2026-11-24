@@ -353,6 +353,68 @@ class FootballerGameweekStats(Base):
     expected_goals_conceded: Mapped[float | None] = mapped_column(Float)
 
 
+# --- Elite ownership (ticket 34): aggregates only, kept across seasons, not Member data ---
+# The sampler reads Elite managers' picks and keeps only these shares: never a sampled
+# manager's ID or Squad. Footballer ids are season-scoped, so every read is per ``season``.
+
+_ELITE_SAMPLE_KEY = ("season", "gameweek", "cohort")
+_ELITE_SAMPLE_REF = tuple(f"elite_samples.{column}" for column in _ELITE_SAMPLE_KEY)
+
+
+class EliteSample(Base):
+    """One Elite cohort's sample at one Gameweek's deadline (``cohort`` "10k": the overall top
+    10,000 by FPL's order when the cohort was read). ``margin_of_error`` is the worst-case
+    (p = 0.5) 95% margin of a share for ``sample_size`` managers out of ``cohort_size``, as a
+    share (0.02 is ±2%); ``target_size`` is the sample the design aimed for."""
+
+    __tablename__ = "elite_samples"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    gameweek: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    cohort: Mapped[str] = mapped_column(String(8), primary_key=True)
+    cohort_size: Mapped[int] = mapped_column(Integer)
+    target_size: Mapped[int] = mapped_column(Integer)
+    sample_size: Mapped[int] = mapped_column(Integer)
+    margin_of_error: Mapped[float] = mapped_column(Float)
+    sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EliteOwnership(Base):
+    """A Footballer's shares in an Elite sample, 0 to 1: in the 15 (``ownership``), in the XI,
+    captained; ``eo`` (effective ownership) is the mean multiplier (captain 2, triple captain
+    3, bench 0 unless Bench Boost). Footballers nobody in the sample picked have no row."""
+
+    __tablename__ = "elite_ownership"
+    __table_args__ = (
+        ForeignKeyConstraint(_ELITE_SAMPLE_KEY, _ELITE_SAMPLE_REF, ondelete="CASCADE"),
+    )
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    gameweek: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    cohort: Mapped[str] = mapped_column(String(8), primary_key=True)
+    footballer_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    ownership: Mapped[float] = mapped_column(Float)
+    xi_share: Mapped[float] = mapped_column(Float)
+    captain_share: Mapped[float] = mapped_column(Float)
+    eo: Mapped[float] = mapped_column(Float)
+
+
+class EliteChip(Base):
+    """The share of an Elite sample that played ``chip`` (FPL's name: "wildcard", "freehit",
+    "bboost", "3xc", ...) in the Gameweek. Chips nobody played have no row."""
+
+    __tablename__ = "elite_chips"
+    __table_args__ = (
+        ForeignKeyConstraint(_ELITE_SAMPLE_KEY, _ELITE_SAMPLE_REF, ondelete="CASCADE"),
+    )
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    gameweek: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    cohort: Mapped[str] = mapped_column(String(8), primary_key=True)
+    chip: Mapped[str] = mapped_column(String(16), primary_key=True)
+    share: Mapped[float] = mapped_column(Float)
+
+
 # --- Price history (ticket 37): kept across seasons, not Member data ---
 # Footballer ids are FPL element ids, renumbered every season, so each row counts only in its
 # own ``season``. Written by ``store/price_history.py``; never raw responses.
