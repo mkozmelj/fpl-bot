@@ -17,7 +17,8 @@ STARTUP_TIME = timedelta(minutes=1)
 
 async def test_owner_status_shows_uptime_version_completions_and_neon(bot: BotHarness) -> None:
     await bot.start_scheduling()
-    # The startup catch-up stores GW9 and GW10, and archives last night's Price changes.
+    # The startup catch-up stores GW9 and GW10 (picks, gw_final) and archives last night's Price
+    # changes.
     await bot.advance(timedelta(hours=2, minutes=5))
 
     await bot.owner.send("/status")
@@ -31,7 +32,7 @@ async def test_owner_status_shows_uptime_version_completions_and_neon(bot: BotHa
         "• price_archive: 2026-11-18, 19 Nov 18:00 UTC",
         "• picks: gw10, 19 Nov 18:00 UTC",
         "• elite: never",
-        "• gw_final: never",
+        "• gw_final: gw10, 19 Nov 18:00 UTC",
     ]
     assert lines[7] == "Neon: reachable"
     assert re.fullmatch(r"Database size: \d+(\.\d)? MB of 1024 MB \(\d+%\)", lines[8]), lines[8]

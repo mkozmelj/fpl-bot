@@ -30,6 +30,8 @@ core/
                                  owner), scheduler.py (planner registry, no persisted
                                  store), post_deadline.py (picks job, deadline refreshes,
                                  startup catch-up), backfill.py (join backfill),
+                                 followed_leagues.py (Followed-league recompute),
+                                 gameweek_final.py (gw-final job)
                                  price_alert.py, price_archive.py (price snapshots,
                                  Price-change archive, news log), member_backup.py
   tests/

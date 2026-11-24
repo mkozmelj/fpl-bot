@@ -12,6 +12,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     SmallInteger,
@@ -221,6 +222,87 @@ class JobCompletion(Base):
     job: Mapped[str] = mapped_column(String(32), primary_key=True)
     period: Mapped[str] = mapped_column(String(16), primary_key=True)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+# --- Followed leagues (ticket 32): the Mini-league tables kept for Members ---
+# Read from public standings (Rivals' team names, ranks and points, never managers' names).
+# Not in the Member backup: they are derived from FPL and recomputed. A Member's links go with
+# them on /leave; a league no Member follows any more is deleted at the next recompute.
+
+_FOLLOWED_LEAGUE_KEY = ["season", "kind", "league_id"]
+_FOLLOWED_LEAGUE_REF = [f"followed_leagues.{column}" for column in _FOLLOWED_LEAGUE_KEY]
+
+
+class FollowedLeague(Base):
+    """A Mini-league at least one Member follows. ``complete`` is False for a Goal league above
+    50 managers, of which only the top 10 and the 20 above and below each following Member are
+    kept. ``gameweek`` is the last deadline's Gameweek when the table was read, and
+    ``gameweek_finished`` whether that Gameweek was over then (the table is final for it)."""
+
+    __tablename__ = "followed_leagues"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8), primary_key=True)  # "classic" or "h2h"
+    league_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    name: Mapped[str] = mapped_column(String(100))
+    complete: Mapped[bool] = mapped_column(Boolean)
+    gameweek: Mapped[int | None] = mapped_column(Integer)
+    gameweek_finished: Mapped[bool] = mapped_column(Boolean)
+    refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LeagueStanding(Base):
+    """One row of a Followed league's table. ``position`` is FPL's order (unique when ranks
+    tie); ``points`` the table's ranking figure (FPL points; league points in head-to-head)."""
+
+    __tablename__ = "league_standings"
+    __table_args__ = (
+        ForeignKeyConstraint(_FOLLOWED_LEAGUE_KEY, _FOLLOWED_LEAGUE_REF, ondelete="CASCADE"),
+    )
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8), primary_key=True)
+    league_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    position: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    entry_id: Mapped[int] = mapped_column(BigInteger)
+    team_name: Mapped[str] = mapped_column(String(100))
+    rank: Mapped[int] = mapped_column(Integer)
+    last_rank: Mapped[int | None] = mapped_column(Integer)
+    points: Mapped[int] = mapped_column(Integer)
+
+
+class MemberLeague(Base):
+    """A Member follows a league. ``sort_order`` is FPL's order of the Member's Mini-leagues
+    (the first stands in for the Goal league when the Goal is Overall rank)."""
+
+    __tablename__ = "member_leagues"
+    __table_args__ = (
+        ForeignKeyConstraint(_FOLLOWED_LEAGUE_KEY, _FOLLOWED_LEAGUE_REF, ondelete="CASCADE"),
+    )
+
+    member_id: Mapped[int] = mapped_column(
+        ForeignKey("members.id", ondelete="CASCADE"), primary_key=True
+    )
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8), primary_key=True)
+    league_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    sort_order: Mapped[int] = mapped_column(Integer)
+
+
+class H2hOpponent(Base):
+    """A Member's opponent in one of their followed head-to-head leagues in one Gameweek.
+    ``opponent_entry_id`` is NULL for a bye (FPL's "average" opponent)."""
+
+    __tablename__ = "h2h_opponents"
+
+    member_id: Mapped[int] = mapped_column(
+        ForeignKey("members.id", ondelete="CASCADE"), primary_key=True
+    )
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    league_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    gameweek: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    opponent_entry_id: Mapped[int | None] = mapped_column(BigInteger)
+    opponent_team_name: Mapped[str | None] = mapped_column(String(100))
 
 
 # --- Price history (ticket 37): kept across seasons, not Member data ---

@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Table, or_, select
+from sqlalchemy import Table, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -35,6 +35,12 @@ class GameweekInfo:
     id: int
     deadline: datetime
     finished: bool
+    data_checked: bool = False
+
+    @property
+    def final(self) -> bool:
+        """FPL has finished and checked the Gameweek: its points and tables won't change."""
+        return self.finished and self.data_checked
 
 
 @dataclass(frozen=True)
@@ -90,12 +96,26 @@ class ReferenceStore:
                 .where(Gameweek.season == season_of(now))
                 .order_by(Gameweek.deadline)
             )
-            gameweeks = [GameweekInfo(g.id, g.deadline, g.finished) for g in rows]
+            gameweeks = [GameweekInfo(g.id, g.deadline, g.finished, g.data_checked) for g in rows]
         passed = [g for g in gameweeks if g.deadline <= now]
         upcoming = [g for g in gameweeks if g.deadline > now]
         return Deadlines(
             last=passed[-1] if passed else None, next=upcoming[0] if upcoming else None
         )
+
+    async def gameweek(self, season: str, gameweek: int) -> GameweekInfo | None:
+        async with self._sessions() as session:
+            g = await session.get(Gameweek, (season, gameweek))
+        return None if g is None else GameweekInfo(g.id, g.deadline, g.finished, g.data_checked)
+
+    async def last_kickoff(self, season: str, gameweek: int) -> datetime | None:
+        """The latest stored kickoff of ``gameweek``'s fixtures, or None if none is stored."""
+        async with self._sessions() as session:
+            return await session.scalar(
+                select(func.max(Fixture.kickoff)).where(
+                    Fixture.season == season, Fixture.gameweek == gameweek
+                )
+            )
 
 
 async def _upsert(

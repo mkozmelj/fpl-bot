@@ -29,12 +29,14 @@ from enum import StrEnum
 from zoneinfo import ZoneInfo
 
 from fplbot.advice.alert_time import price_alert_send_time
+from fplbot.advice.league_table import league_view
 from fplbot.clock import Clock
 from fplbot.delivery import texts
 from fplbot.delivery.messages import Button, Reply
 from fplbot.delivery.timezones import BUTTON_ZONES, resolve_timezone
 from fplbot.sources.footballer_search import Footballer, footballers_in, search
 from fplbot.sources.fpl import FplEntry, FplError, FplLeague, FplSource, Lookup
+from fplbot.store.leagues import LeagueStore, LeagueTable
 from fplbot.store.members import Goal, GoalLeague, MemberRecord, MemberStore
 from fplbot.store.reference import Deadlines, ReferenceStore
 from fplbot.store.seasons import season_of
@@ -111,6 +113,8 @@ type StepHandler = Callable[[Turn, str], Awaitable[None]]
 type TeamLinked = Callable[[int, int], None]
 # Called after a change that moves scheduled work (alert time, timezone, joining, leaving).
 type SettingsChanged = Callable[[], None]
+# Called after a Member's Goal is set or changed (during setup too): recomputes Followed leagues.
+type GoalChanged = Callable[[], None]
 
 
 class MemberFlow:
@@ -123,8 +127,10 @@ class MemberFlow:
         clock: Clock,
         reference: ReferenceStore,
         squads: SquadStore,
+        leagues: LeagueStore,
         on_team_linked: TeamLinked,
         on_settings_changed: SettingsChanged = lambda: None,
+        on_goal_changed: GoalChanged = lambda: None,
     ) -> None:
         self._members = members
         self._watch_list = watch_list
@@ -134,6 +140,8 @@ class MemberFlow:
         self._squads = squads
         self._on_team_linked = on_team_linked
         self._on_settings_changed = on_settings_changed
+        self._leagues = leagues
+        self._on_goal_changed = on_goal_changed
         self._states: dict[int, ChatState] = {}
         self._commands: dict[str, CommandHandler] = {
             "/start": self._start,
@@ -141,6 +149,7 @@ class MemberFlow:
             "/cancel": self._cancel,
             "/settings": self._settings,
             "/squad": self._squad,
+            "/league": self._league,
             "/goal": self._goal,
             "/tz": self._tz,
             "/time": self._time,
@@ -284,6 +293,7 @@ class MemberFlow:
     async def _on_goal(self, turn: Turn, choice: str) -> None:
         if choice == "overall":
             await self._members.set_goal(turn.member.chat_id, Goal.OVERALL, None)
+            self._on_goal_changed()
             await self._advance(turn)
             return
         if choice != "league":
@@ -296,6 +306,7 @@ class MemberFlow:
             return
         if not entry.mini_leagues:
             await self._members.set_goal(turn.member.chat_id, Goal.OVERALL, None)
+            self._on_goal_changed()
             turn.say(texts.NO_MINI_LEAGUE)
             await self._advance(turn)
             return
@@ -315,6 +326,7 @@ class MemberFlow:
         await self._members.set_goal(
             turn.member.chat_id, Goal.LEAGUE, GoalLeague(league.id, league.kind, league.name)
         )
+        self._on_goal_changed()
         await self._advance(turn)
 
     async def _on_tz(self, turn: Turn, choice: str) -> None:
@@ -345,6 +357,7 @@ class MemberFlow:
             return
         log.info("member %d left", turn.member.number)
         await self._members.delete(turn.member.chat_id)
+        await self._leagues.forget_unfollowed()
         self._on_settings_changed()
         self.forget(turn.member.chat_id)
         turn.say(texts.LEFT)
@@ -385,6 +398,24 @@ class MemberFlow:
             turn.say(texts.no_squad(last.id, hidden))
             return
         turn.say(_squad_text(turn.member.team_name or "", squad, hidden))
+
+    async def _league(self, turn: Turn, argument: str) -> None:
+        member = turn.member
+        season = season_of(self._clock.now())
+        table = _goal_table(member, await self._leagues.followed(member.number, season))
+        if table is None or member.team_id is None:
+            turn.say(texts.LEAGUE_NONE)
+            return
+        lines = [_league_text(table, member.team_id)]
+        deadlines = await self._reference.deadlines(self._clock.now())
+        if table.kind == "h2h" and deadlines.next is not None:
+            gameweek = deadlines.next.id
+            opponent = await self._leagues.h2h_opponent(
+                member.number, season, table.league_id, gameweek
+            )
+            if opponent is not None:
+                lines.append(texts.league_h2h_opponent(gameweek, opponent.team_name))
+        turn.say("\n".join(lines))
 
     async def _goal(self, turn: Turn, argument: str) -> None:
         self._ask_goal(turn)
@@ -527,6 +558,39 @@ class MemberFlow:
 
     async def _unknown_command(self, turn: Turn, argument: str) -> None:
         turn.say(texts.UNKNOWN_COMMAND)
+
+
+def _goal_table(member: MemberRecord, followed: list[LeagueTable]) -> LeagueTable | None:
+    """The Goal league's table; with Overall rank as Goal, the first Followed league."""
+    league = member.league
+    if member.goal is Goal.LEAGUE and league is not None:
+        return next(
+            (t for t in followed if (t.kind, t.league_id) == (league.kind, league.id)), None
+        )
+    return followed[0] if followed else None
+
+
+def _league_text(table: LeagueTable, team_id: int) -> str:
+    view = league_view(table.rows, team_id)
+    rows: list[str] = []
+    for row in view.rows:
+        if row.after_gap:
+            rows.append(texts.LEAGUE_SKIPPED_ROWS)
+        rows.append(texts.league_row(row.rank, row.movement, row.team_name, row.points, row.you))
+    notes: list[str] = []
+    if not table.complete:
+        notes.append(texts.LEAGUE_BIG)
+    if not view.you_in_table:
+        notes.append(texts.LEAGUE_NOT_IN_TABLE)
+    else:
+        if view.behind:
+            notes.append(texts.league_behind(view.behind.points, view.behind.team_name))
+        if view.ahead:
+            notes.append(texts.league_ahead(view.ahead.points, view.ahead.team_name))
+        leader = view.leader_gap
+        notes.append(texts.LEAGUE_LEADER_YOU if leader is None else texts.league_leader(leader))
+    header = texts.league_header(table.name, table.gameweek, table.gameweek_finished)
+    return "\n".join([header, *rows, "", *notes])
 
 
 def _summary(member: MemberRecord) -> str:

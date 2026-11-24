@@ -15,11 +15,12 @@ from fplbot.advice.alert_time import UK
 from fplbot.advice.price_accuracy import price_accuracy
 from fplbot.clock import Clock
 from fplbot.delivery import texts
-from fplbot.delivery.member_flow import MemberFlow, SettingsChanged, TeamLinked
+from fplbot.delivery.member_flow import GoalChanged, MemberFlow, SettingsChanged, TeamLinked
 from fplbot.delivery.messages import Button, Incoming, Press, Reply
 from fplbot.delivery.price_accuracy import render_accuracy
 from fplbot.delivery.rate_limit import AttemptLimiter
 from fplbot.sources.fpl import FplSource
+from fplbot.store.leagues import LeagueStore
 from fplbot.store.members import Joined, MemberStore, Refusal
 from fplbot.store.price_history import PriceHistoryStore
 from fplbot.store.reference import ReferenceStore
@@ -49,9 +50,11 @@ class Conversation:
         clock: Clock,
         reference: ReferenceStore,
         squads: SquadStore,
+        leagues: LeagueStore,
         on_team_linked: TeamLinked,
         price_history: PriceHistoryStore,
         on_settings_changed: SettingsChanged = lambda: None,
+        on_goal_changed: GoalChanged = lambda: None,
         owner_status: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._owner_id = owner_id
@@ -67,8 +70,10 @@ class Conversation:
             clock=clock,
             reference=reference,
             squads=squads,
+            leagues=leagues,
             on_team_linked=on_team_linked,
             on_settings_changed=on_settings_changed,
+            on_goal_changed=on_goal_changed,
         )
 
     async def respond(self, message: Incoming, bot_username: str) -> list[Reply]:

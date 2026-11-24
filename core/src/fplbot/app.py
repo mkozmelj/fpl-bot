@@ -23,6 +23,8 @@ from fplbot.delivery.owner_chat import TelegramOwnerChat
 from fplbot.delivery.status import OwnerStatus
 from fplbot.jobs.backfill import JOB_NAME as BACKFILL_JOB
 from fplbot.jobs.backfill import backfill_member
+from fplbot.jobs.followed_leagues import FollowedLeagues
+from fplbot.jobs.gameweek_final import GameweekFinal
 from fplbot.jobs.heartbeat import Heartbeat, HttpxPinger, Pinger
 from fplbot.jobs.member_backup import (
     MEMBER_BACKUP_AT,
@@ -46,6 +48,7 @@ from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient, Priorit
 from fplbot.sources.live import HttpxFplTransport
 from fplbot.store.completions import CompletionStore
 from fplbot.store.db import create_engine
+from fplbot.store.leagues import LeagueStore
 from fplbot.store.members import MemberStore
 from fplbot.store.migrate import schema_is_current
 from fplbot.store.owner_notices import OwnerNotices
@@ -92,6 +95,7 @@ class FplBotApp:
         # Reference data (Gameweeks, Footballers, clubs, fixtures) and Members' history/picks.
         self.reference = ReferenceStore(self.engine, self.clock)
         self.squads = SquadStore(self.engine)
+        self.leagues = LeagueStore(self.engine)
         # Price snapshots, Price changes, alert-time codes and the news log (ticket 37).
         self.price_history = PriceHistoryStore(self.engine)
 
@@ -119,9 +123,11 @@ class FplBotApp:
                 clock=self.clock,
                 reference=self.reference,
                 squads=self.squads,
+                leagues=self.leagues,
                 on_team_linked=on_team_linked,
                 price_history=self.price_history,
                 on_settings_changed=lambda: self.scheduler.rebuild(),
+                on_goal_changed=lambda: self.followed_leagues.recompute_soon(),
                 owner_status=self.status.report,
             ),
         )
@@ -175,6 +181,23 @@ class FplBotApp:
             completions=self.completions,
         )
         self.scheduler.add(self.post_deadline.plan)
+        # Followed leagues (ticket 32): recomputed on join / Goal change and when a GW is final.
+        self.followed_leagues = FollowedLeagues(
+            clock=self.clock,
+            members=self.members,
+            reference=self.reference,
+            leagues=self.leagues,
+            jobs=self.jobs,
+        )
+        self.gameweek_final = GameweekFinal(
+            clock=self.clock,
+            members=self.members,
+            reference=self.reference,
+            squads=self.squads,
+            completions=self.completions,
+            followed_leagues=self.followed_leagues,
+        )
+        self.scheduler.add(self.gameweek_final.plan)
         self.scheduler.add(self.price_alerts.plan)
         self.scheduler.add(self.price_archive.plan)
         self.scheduler.add(

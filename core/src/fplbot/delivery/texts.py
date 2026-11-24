@@ -113,6 +113,7 @@ LEFT = "Done. Everything I stored about you is deleted. To rejoin you need a new
 # (command, what it does) in /help order. Later tickets add their commands here.
 COMMANDS: list[tuple[str, str]] = [
     ("/squad", "your Squad at the last deadline"),
+    ("/league", "your league table"),
     ("/watch", "show your Watch list"),
     ("/watch add <name>", ""),
     ("/watch remove <name>", ""),
@@ -360,6 +361,48 @@ def settings_watch_list(names: list[str] | None, count: int) -> str:
     if names is None:
         return f"Watch list: {count} Footballers"
     return "Watch list: " + ", ".join(names)
+
+
+# --- /league (ticket 32; shape from leagueMessage in the Gap prototype) ---
+
+LEAGUE_NONE = (
+    "No league table to show yet. I follow your Mini-leagues of up to 50 managers, and your "
+    "Goal league whatever its size. If you've just joined or changed /goal, try again in a "
+    "few minutes."
+)
+LEAGUE_BIG = "Big league: showing the top 10 and the 20 managers directly above and below you."
+LEAGUE_NOT_IN_TABLE = "You're not in this table yet: FPL adds new managers at its next update."
+LEAGUE_LEADER_YOU = "Leader is you"
+LEAGUE_SKIPPED_ROWS = "   …"
+
+
+def league_header(name: str, gameweek: int | None, finished: bool) -> str:
+    if gameweek is None:
+        return f"{name} · before GW1"
+    return f"{name} · after GW{gameweek}" if finished else f"{name} · GW{gameweek} in progress"
+
+
+def league_row(rank: int, movement: int, team_name: str, points: int, you: bool) -> str:
+    arrow = "▲" if movement > 0 else "▼" if movement < 0 else "–"
+    moved = str(abs(movement)) if movement else " "
+    line = f"{rank:>2} {arrow}{moved} {team_name:<20} {points}"
+    return f"{line}  ← you" if you else line
+
+
+def league_behind(points: int, team_name: str) -> str:
+    return f"{points} pts behind {team_name}"
+
+
+def league_ahead(points: int, team_name: str) -> str:
+    return f"{points} pts ahead of {team_name}"
+
+
+def league_leader(points: int) -> str:
+    return f"Leader {points} pts clear of you" if points else "Level on points with the leader"
+
+
+def league_h2h_opponent(gameweek: int, team_name: str | None) -> str:
+    return f"GW{gameweek} opponent: {team_name}" if team_name else f"GW{gameweek}: a bye"
 
 
 # --- Owner /status, startup and usage warnings (ticket 38) ---

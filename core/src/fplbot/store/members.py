@@ -132,6 +132,14 @@ class MemberStore:
             )
             return [(number, team_id) for number, team_id in rows.tuples() if team_id is not None]
 
+    async def with_teams(self) -> list[MemberRecord]:
+        """Every Member with a linked team (joining or active), by Member number."""
+        async with self._sessions() as session:
+            members = await session.scalars(
+                select(Member).where(Member.team_id.is_not(None)).order_by(Member.id)
+            )
+            return [_record(member) for member in members]
+
     async def active(self) -> list[MemberRecord]:
         """Every Member who finished setup, by Member number."""
         async with self._sessions() as session:
