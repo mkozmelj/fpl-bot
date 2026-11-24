@@ -22,6 +22,7 @@ from fplbot.delivery.owner_chat import TelegramOwnerChat
 from fplbot.jobs.backfill import JOB_NAME as BACKFILL_JOB
 from fplbot.jobs.backfill import backfill_member
 from fplbot.jobs.member_backup import MemberBackup
+from fplbot.jobs.price_alert import PriceAlerts
 from fplbot.jobs.runner import JobRunner
 from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
 from fplbot.sources.fpl import FplSource, FplTransport, PoliteFplClient, Priority
@@ -97,6 +98,19 @@ class FplBotApp:
             config.backup_public_key,
             TelegramOwnerChat(self.telegram.bot, owner_id),
             self.clock,
+        )
+
+        async def send_to_member(chat_id: int, text: str) -> None:
+            await self.telegram.bot.send_message(chat_id, text)
+
+        # Nightly Price alerts: the scheduler runs ``planned_runs(night)`` (ticket 31).
+        self.price_alerts = PriceAlerts(
+            members=self.members,
+            watch_list=WatchListStore(self.engine),
+            squads=self.squads,
+            owner_alerts=self.owner_alerts,
+            clock=self.clock,
+            send=send_to_member,
         )
 
     def _fpl_transport_for(self, config: Config) -> FplTransport:

@@ -1,8 +1,9 @@
 """When a Member's Price alert goes out (ticket 15): their chosen local time, clamped to the
 17:00-23:15 UK window so it always lands before the 00:00 UK price update."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 UK = ZoneInfo("Europe/London")
@@ -27,3 +28,21 @@ def price_alert_send_time(chosen: time, timezone: ZoneInfo, on: date) -> AlertSe
     closes = datetime.combine(wanted.date(), WINDOW_CLOSES, UK)
     at = min(max(wanted, opens), closes)
     return AlertSendTime(at=at, clamped=at != wanted)
+
+
+def send_time_on_night(chosen: time, timezone: ZoneInfo, night: date) -> AlertSendTime:
+    """When the alert chosen for ``chosen`` local time goes out on UK night ``night`` (the UK
+    date whose following 00:00 price update it warns about). Far from the UK the Member's local
+    date that evening can be the day before or after ``night``; the UK time of day is the one
+    ``/time`` told them."""
+    for days in (0, -1, 1):
+        send = price_alert_send_time(chosen, timezone, night + timedelta(days=days))
+        if send.at.date() == night:
+            return send
+    raise AssertionError("every local date maps onto a UK date within a day")  # pragma: no cover
+
+
+def send_times_on_night(settings: Iterable[tuple[time, ZoneInfo]], night: date) -> list[datetime]:
+    """The distinct UK send times on ``night`` for Members' (alert time, timezone) settings,
+    earliest first. Members sharing a time share one run, and so one ``bootstrap-static`` fetch."""
+    return sorted({send_time_on_night(chosen, zone, night).at for chosen, zone in settings})

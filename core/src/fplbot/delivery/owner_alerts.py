@@ -37,6 +37,7 @@ class OwnerAlerts:
         # Per job: failures in a row, and when the first of them happened.
         self._failing: dict[str, tuple[int, datetime]] = {}
         self._incidents: dict[tuple[str, str], _Incident] = {}
+        self._told_once: set[tuple[str, object]] = set()
 
     async def job_failed(self, job: str, code: str, *, urgent: bool = False) -> None:
         now = self._clock.now()
@@ -59,6 +60,14 @@ class OwnerAlerts:
             del self._incidents[job_and_code]
             code = job_and_code[1]
             await self._tell(code, job, texts.owner_recovered(code, job))
+
+    async def failed_once(self, job: str, code: str, period: object, text: str) -> None:
+        """Tell the owner ``text`` about ``job`` failing, at most once per ``period`` (e.g. a
+        night's date): for jobs that report their own failures instead of raising."""
+        if (job, period) in self._told_once:
+            return
+        self._told_once.add((job, period))
+        await self._tell(code, job, text)
 
     async def _tell(self, code: str, job: str, text: str) -> None:
         log.info("owner told: %s in job %s", code, job)
