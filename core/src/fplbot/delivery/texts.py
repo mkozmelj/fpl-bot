@@ -263,6 +263,42 @@ def watch_removed(name: str) -> str:
     return f"Removed {name}."
 
 
+def price_alert_header(gameweek: int) -> str:
+    return f"Price alert · GW{gameweek} · tonight 00:00 UK"
+
+
+PRICE_FALLS = "Likely to fall (you own)"
+PRICE_RISES = "Likely to rise (Watch list)"
+VERY_LIKELY = "Very likely"
+LIKELY = "Likely"
+
+
+def price_alert_line(
+    name: str, position: str, club: str, price: str, new_price: str, likelihood: str
+) -> str:
+    return f"• {name} {position} {club} {price} → {new_price} · {likelihood}"
+
+
+def price_alert_tomorrow(mentions: list[tuple[str, bool]]) -> str:
+    """``mentions``: (name, rise) pairs."""
+    listed = ", ".join(f"{name} to {'rise' if rise else 'fall'}" for name, rise in mentions)
+    return f"Tomorrow night (Very likely): {listed}."
+
+
+PRICE_SAVING_FALLS = "If you were planning to sell anyway, doing it before 00:00 UK saves £0.1m."
+PRICE_SAVING_RISES = (
+    "If you were planning to buy anyway, doing it before 00:00 UK avoids paying £0.1m more."
+)
+PRICE_SAVING_BOTH = (
+    "If you were planning to sell or buy anyway, doing it before 00:00 UK saves £0.1m a Footballer."
+)
+PRICE_STALE_SQUAD = "Based on your Squad at the last deadline. Ignore any you've already sold."
+
+
+def price_alert_failed(code: str, job: str) -> str:
+    return f"{owner_alert(code, job)} Tonight's Price alerts were not sent."
+
+
 def settings_watch_list(names: list[str] | None, count: int) -> str:
     """The /settings line. ``names`` is ``None`` when FPL can't be reached for them."""
     if count == 0:

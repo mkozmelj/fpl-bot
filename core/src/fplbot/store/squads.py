@@ -7,7 +7,7 @@ running when they leave).
 
 from dataclasses import dataclass
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
@@ -103,6 +103,21 @@ class SquadStore:
         except IntegrityError:
             return False
         return True
+
+    async def latest_squad(
+        self, member_number: int, season: str, up_to_gameweek: int
+    ) -> Squad | None:
+        """The most recent stored Squad at or before ``up_to_gameweek``'s deadline (older than
+        that Gameweek when its picks are not stored yet), or ``None``."""
+        async with self._sessions() as session:
+            gameweek = await session.scalar(
+                select(func.max(MemberPick.gameweek)).where(
+                    MemberPick.member_id == member_number,
+                    MemberPick.season == season,
+                    MemberPick.gameweek <= up_to_gameweek,
+                )
+            )
+        return None if gameweek is None else await self.squad(member_number, season, gameweek)
 
     async def squad(self, member_number: int, season: str, gameweek: int) -> Squad | None:
         """The Member's Squad at ``gameweek``'s deadline, or ``None`` if none is stored."""

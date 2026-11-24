@@ -122,6 +122,14 @@ class MemberStore:
             member = await session.scalar(select(Member).where(Member.chat_id == chat_id))
             return None if member is None else _record(member)
 
+    async def active(self) -> list[MemberRecord]:
+        """Every Member who finished setup, by Member number."""
+        async with self._sessions() as session:
+            members = await session.scalars(
+                select(Member).where(Member.status == "active").order_by(Member.id)
+            )
+            return [_record(member) for member in members]
+
     async def team_linked_elsewhere(self, team_id: int, chat_id: int) -> bool:
         """Whether another Member has already linked FPL team ``team_id``."""
         async with self._sessions() as session:
