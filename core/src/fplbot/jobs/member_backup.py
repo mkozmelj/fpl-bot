@@ -12,6 +12,10 @@ a new message is sent instead.
 Scheduling (ticket 31): ``app.py`` registers ``daily(MEMBER_BACKUP_JOB, ..., MEMBER_BACKUP_AT,
 MEMBER_BACKUP_ZONE)`` with the scheduler: once a day at 04:00 UK time, priority
 ``Priority.ROUTINE``. It makes no FPL requests.
+
+One backup per UK day: a sent backup gets a ``member-backup`` completion row for its UK date,
+so a re-run that day (the scheduler re-fires a run after a restart inside its grace window)
+sends nothing.
 """
 
 import logging
@@ -26,7 +30,9 @@ from fplbot.clock import Clock
 from fplbot.delivery import texts
 from fplbot.sources.fpl import FplSource
 from fplbot.store.backup import BackupMessages, export_member_tables
+from fplbot.store.completions import CompletionStore, night_period
 from fplbot.store.owner_notices import OwnerNotices
+from fplbot.store.seasons import season_of
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +69,7 @@ class MemberBackup:
         self._engine = engine
         self._notices = OwnerNotices(engine)
         self._messages = BackupMessages(engine)
+        self._completions = CompletionStore(engine)
         self._recipient = pyrage.x25519.Recipient.from_str(public_key) if public_key else None
         self._owner = owner
         self._clock = clock
@@ -82,6 +89,10 @@ class MemberBackup:
             log.info("member backup skipped: no public key")
             return
         await self._notices.clear(NO_KEY_NOTICE)
+        season, period = season_of(now), night_period(now.astimezone(MEMBER_BACKUP_ZONE).date())
+        if await self._completions.done(MEMBER_BACKUP_JOB, season, period):
+            log.info("member backup already sent today")
+            return
 
         export = await export_member_tables(self._engine, now)
         filename = f"fplbot-members-{now:%Y-%m-%d}.sql.age"
@@ -92,9 +103,11 @@ class MemberBackup:
         if oldest is not None:
             if await self._owner.replace_document(oldest, filename, content, caption):
                 await self._messages.rewritten(oldest, now)
+                await self._completions.record(MEMBER_BACKUP_JOB, season, period, now)
                 log.info("member backup sent over the oldest: %d Members", export.members)
                 return
             await self._messages.forget(oldest)
         message_id = await self._owner.send_document(filename, content, caption)
         await self._messages.record(message_id, now)
+        await self._completions.record(MEMBER_BACKUP_JOB, season, period, now)
         log.info("member backup sent: %d Members", export.members)

@@ -3,21 +3,27 @@ replies out.
 
 ``telegram.py`` adapts python-telegram-bot updates to ``Conversation.respond`` and
 ``Conversation.press``; group chats never reach this module. Strangers get silence: an empty
-reply list. Members are handed to ``MemberFlow`` (setup, settings, ``/leave``).
+reply list. Members are handed to ``MemberFlow`` (setup, settings, ``/leave``). Owner-only
+commands (``/invite``, ``/accuracy``) get silence from anyone else, Members included.
 """
 
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
+from fplbot.advice.alert_time import UK
+from fplbot.advice.price_accuracy import price_accuracy
 from fplbot.clock import Clock
 from fplbot.delivery import texts
 from fplbot.delivery.member_flow import MemberFlow, SettingsChanged, TeamLinked
 from fplbot.delivery.messages import Button, Incoming, Press, Reply
+from fplbot.delivery.price_accuracy import render_accuracy
 from fplbot.delivery.rate_limit import AttemptLimiter
 from fplbot.sources.fpl import FplSource
 from fplbot.store.members import Joined, MemberStore, Refusal
+from fplbot.store.price_history import PriceHistoryStore
 from fplbot.store.reference import ReferenceStore
+from fplbot.store.seasons import season_of
 from fplbot.store.squads import SquadStore
 from fplbot.store.watch_list import WatchListStore
 
@@ -44,12 +50,14 @@ class Conversation:
         reference: ReferenceStore,
         squads: SquadStore,
         on_team_linked: TeamLinked,
+        price_history: PriceHistoryStore,
         on_settings_changed: SettingsChanged = lambda: None,
         owner_status: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._owner_id = owner_id
         self._owner_status = owner_status
         self._members = members
+        self._price_history = price_history
         self._clock = clock
         self._wrong_codes = AttemptLimiter(WRONG_CODES_ALLOWED, WRONG_CODE_WINDOW)
         self._member_flow = MemberFlow(
@@ -77,6 +85,11 @@ class Conversation:
         if command == "/status" and message.user_id == self._owner_id and self._owner_status:
             return [Reply(await self._owner_status())]
 
+        if command == "/accuracy":
+            if message.user_id != self._owner_id:
+                return []
+            return [Reply(await self._accuracy(now))]
+
         member = await self._members.get(message.chat_id)
         if member is not None:
             return await self._member_flow.on_text(member, command, argument)
@@ -90,6 +103,14 @@ class Conversation:
         if member is None:
             return []
         return await self._member_flow.on_press(member, press.data)
+
+    async def _accuracy(self, now: datetime) -> str:
+        season = season_of(now)
+        # The latest night whose 00:00 UK price update has happened.
+        last_night = now.astimezone(UK).date() - timedelta(days=1)
+        outcomes = await self._price_history.outcomes(season)
+        log.info("accuracy report shown")
+        return render_accuracy(price_accuracy(outcomes, last_night=last_night), season)
 
     async def _redeem(self, code: str, chat_id: int, now: datetime) -> list[Reply]:
         if self._wrong_codes.is_locked(chat_id, now):

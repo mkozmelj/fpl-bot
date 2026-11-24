@@ -136,7 +136,8 @@ async def test_starting_after_missed_deadlines_catches_up_the_current_and_previo
 async def test_bootstrap_static_is_refreshed_90_and_30_minutes_before_and_just_after_a_deadline(
     bot: BotHarness,
 ) -> None:
-    await bot.start_scheduling()
+    # Without the news reads and price snapshots (ticket 37): they fetch bootstrap-static too.
+    await bot.start_scheduling(price_history=False)
     await bot.advance(STARTUP_TIME)
     fetched_before = len(bot.fpl.requests)
 

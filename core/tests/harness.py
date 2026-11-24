@@ -374,6 +374,7 @@ class BotHarness:
     _update_ids: count[int] = field(default_factory=lambda: count(1))
     _driven: set[asyncio.Task[Any]] = field(default_factory=set[asyncio.Task[Any]])
     _scheduling: bool = False
+    _price_history: bool = True
     _started: bool = False
 
     @property
@@ -396,13 +397,24 @@ class BotHarness:
             await self._settle()
         self.clock.move_to(target)
 
-    async def start_scheduling(self) -> None:
+    async def start_scheduling(self, *, price_history: bool = True) -> None:
         """Start the bot's scheduled jobs as production does at startup (startup refresh and
         catch-up first, then the plan), and keep them running across ``restart``. Off by default
-        so tests that script FPL answers are not disturbed by scheduled fetches."""
+        so tests that script FPL answers are not disturbed by scheduled fetches.
+        ``price_history=False`` leaves out the hourly news reads, evening price snapshots and
+        nightly archive (ticket 37), for tests that count another feature's FPL requests."""
         self._scheduling = True
-        self.app.start_scheduling()
+        self._price_history = price_history
+        self._start_scheduling()
         await self._settle()
+
+    def _start_scheduling(self) -> None:
+        self._leave_out_features()
+        self.app.start_scheduling()
+
+    def _leave_out_features(self) -> None:
+        if not self._price_history:
+            self.app.scheduler.remove(self.app.price_archive.plan)
 
     async def start_up(self) -> None:
         """Start the bot as production does (``app.start()``: migration check, Telegram poll,
@@ -499,9 +511,10 @@ class BotHarness:
         )
         await self.app.__aenter__()
         if self._started:
+            self._leave_out_features()
             await self._until_done(asyncio.create_task(self.app.start()))
         elif self._scheduling:
-            self.app.start_scheduling()
+            self._start_scheduling()
             await self._settle()
 
     async def invited_friend(self, user_id: int) -> Chat:

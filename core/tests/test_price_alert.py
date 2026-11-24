@@ -32,7 +32,8 @@ NIGHT_OVER = time(23, 30)
 
 @pytest.fixture(autouse=True)
 async def scheduling(bot: BotHarness) -> None:
-    await bot.start_scheduling()
+    # Without the news reads and price snapshots (ticket 37): they fetch bootstrap-static too.
+    await bot.start_scheduling(price_history=False)
     await bot.advance(STARTUP_TIME)
 
 
@@ -354,3 +355,18 @@ async def test_a_new_alert_time_counts_from_tonight(bot: BotHarness) -> None:
     await bot.advance(datetime(2026, 11, 19, 18, 50, tzinfo=UK) - bot.clock.now())
 
     assert alice.last_reply.startswith("Price alert · GW11 · tonight 00:00 UK")
+
+
+async def test_a_restart_just_after_a_send_time_does_not_send_the_alert_again(
+    bot: BotHarness,
+) -> None:
+    bot.fpl.respond("bootstrap-static/", bootstrap({103: (-5, 0)}))
+    alice = await ljubljana_member(bot)  # 20:00 Ljubljana: 19:00 UK
+    await bot.advance(datetime(2026, 11, 19, 19, 2, tzinfo=UK) - bot.clock.now())
+    sent = len(alice.replies)
+
+    await bot.restart()  # inside the run's grace window: the scheduler fires it again
+    await bot.advance(datetime(2026, 11, 19, 19, 30, tzinfo=UK) - bot.clock.now())
+
+    assert alice.replies[sent - 1].startswith("Price alert · GW11")
+    assert len(alice.replies) == sent

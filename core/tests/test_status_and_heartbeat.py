@@ -17,7 +17,8 @@ STARTUP_TIME = timedelta(minutes=1)
 
 async def test_owner_status_shows_uptime_version_completions_and_neon(bot: BotHarness) -> None:
     await bot.start_scheduling()
-    await bot.advance(timedelta(hours=2, minutes=5))  # the startup catch-up stores GW9 and GW10
+    # The startup catch-up stores GW9 and GW10, and archives last night's Price changes.
+    await bot.advance(timedelta(hours=2, minutes=5))
 
     await bot.owner.send("/status")
 
@@ -27,7 +28,7 @@ async def test_owner_status_shows_uptime_version_completions_and_neon(bot: BotHa
         "Status",
         "Up 2 h 5 min · v0.1.0 (0123abc)",
         "Last completed:",
-        "• price_archive: never",
+        "• price_archive: 2026-11-18, 19 Nov 18:00 UTC",
         "• picks: gw10, 19 Nov 18:00 UTC",
         "• elite: never",
         "• gw_final: never",
