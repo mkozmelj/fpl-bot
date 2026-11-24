@@ -18,8 +18,10 @@ from fplbot.config import Config
 from fplbot.delivery import telegram
 from fplbot.delivery.conversation import Conversation
 from fplbot.delivery.owner_alerts import OwnerAlerts
+from fplbot.delivery.owner_chat import TelegramOwnerChat
 from fplbot.jobs.backfill import JOB_NAME as BACKFILL_JOB
 from fplbot.jobs.backfill import backfill_member
+from fplbot.jobs.member_backup import MemberBackup
 from fplbot.jobs.price_alert import PriceAlerts
 from fplbot.jobs.runner import JobRunner
 from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
@@ -90,6 +92,13 @@ class FplBotApp:
 
         self.owner_alerts = OwnerAlerts(send_to_owner, self.clock)
         self.jobs = JobRunner(self.fpl, self.owner_alerts)
+        # Nightly job (ticket 39); ticket 31 schedules it, see jobs/member_backup.py.
+        self.member_backup = MemberBackup(
+            self.engine,
+            config.backup_public_key,
+            TelegramOwnerChat(self.telegram.bot, owner_id),
+            self.clock,
+        )
 
         async def send_to_member(chat_id: int, text: str) -> None:
             await self.telegram.bot.send_message(chat_id, text)

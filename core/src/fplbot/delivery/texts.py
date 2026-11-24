@@ -46,6 +46,23 @@ def owner_recovered(code: str, job: str) -> str:
     return f"{code}: the {job} job has recovered."
 
 
+# --- Nightly Member backup (ticket 39) ---
+
+
+def member_backup_caption(taken_at: datetime, members: int) -> str:
+    noun = "Member" if members == 1 else "Members"
+    return (
+        f"Member backup, {taken_at:%d %b %Y %H:%M} UTC: {members} {noun}. Encrypted with age; "
+        "the restore drill is in docs/runbook-secrets.md."
+    )
+
+
+MEMBER_BACKUP_NO_KEY = (
+    "Member backup skipped: BACKUP_AGE_PUBLIC_KEY is not set. Set it to an age public key to get "
+    "a nightly encrypted backup here (docs/runbook-secrets.md)."
+)
+
+
 # --- Setup, settings and leaving (ticket 28; wording from the ticket 14 prototype) ---
 
 ASK_TEAM_ID = (
