@@ -23,9 +23,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from fplbot.advice.alert_time import UK, WINDOW_CLOSES, send_time_on_night, send_times_on_night
-from fplbot.advice.price_alert import FootballerPrice, price_alert, squad_may_be_stale
-from fplbot.clock import Clock
+from fplbot.advice.alert_time import WINDOW_CLOSES, send_time_on_night, send_times_on_night
+from fplbot.advice.price_alert import price_alert, squad_may_be_stale
+from fplbot.clock import UK_ZONE, Clock
 from fplbot.delivery import texts
 from fplbot.delivery.owner_alerts import OwnerAlerts
 from fplbot.delivery.price_alert import render_price_alert
@@ -39,7 +39,7 @@ from fplbot.sources.fpl import (
     NewSeasonWaiting,
     Priority,
 )
-from fplbot.sources.price_projections import price_projections
+from fplbot.sources.price_projections import FootballerPrice, price_projections
 from fplbot.store.completions import CompletionStore
 from fplbot.store.members import MemberRecord, MemberStore
 from fplbot.store.price_history import PriceHistoryStore
@@ -92,7 +92,7 @@ class PriceAlerts:
 
     async def plan(self, now: datetime) -> list[PlannedRun]:
         """Planner (``Scheduler.add``): tonight's and tomorrow night's runs (UK nights)."""
-        tonight = now.astimezone(UK).date()
+        tonight = now.astimezone(UK_ZONE).date()
         return [
             *await self.planned_runs(tonight),
             *await self.planned_runs(tonight + timedelta(days=1)),
@@ -105,7 +105,7 @@ class PriceAlerts:
             for member in await self._members.active()
             if member.timezone
         ]
-        closes = datetime.combine(night, WINDOW_CLOSES, UK)
+        closes = datetime.combine(night, WINDOW_CLOSES, UK_ZONE)
         return [
             PlannedRun(
                 at,
@@ -119,7 +119,7 @@ class PriceAlerts:
 
     def job(self, send_time: datetime) -> Job:
         """The run for every Member whose alert goes out at ``send_time``."""
-        night = send_time.astimezone(UK).date()
+        night = send_time.astimezone(UK_ZONE).date()
 
         async def job(fpl: FplSource) -> None:
             members = [m for m in await self._members.active() if _sends_at(m, send_time, night)]
@@ -157,7 +157,7 @@ class PriceAlerts:
         return job
 
     async def _fetch(self, fpl: FplSource, night: date) -> _Night:
-        cutoff = datetime.combine(night, WINDOW_CLOSES, UK)
+        cutoff = datetime.combine(night, WINDOW_CLOSES, UK_ZONE)
         try:
             return await _night_data(fpl)
         except FplBlocked, NewSeasonWaiting:
@@ -190,7 +190,7 @@ class PriceAlerts:
                 squad_gameweek=squad.gameweek if squad else None,
                 last_gameweek=last.id if last else None,
                 next_deadline=following.deadline if following else None,
-                price_update=datetime.combine(night + timedelta(days=1), time(0), UK),
+                price_update=datetime.combine(night + timedelta(days=1), time(0), UK_ZONE),
             ),
         )
         if alert is None:
@@ -214,7 +214,7 @@ async def _night_data(fpl: FplSource) -> _Night:
 
 def _send_period(send_time: datetime) -> str:
     """The completion-row period of one send time, e.g. ``2026-11-19T19:00`` (UK)."""
-    return f"{send_time.astimezone(UK):%Y-%m-%dT%H:%M}"
+    return f"{send_time.astimezone(UK_ZONE):%Y-%m-%dT%H:%M}"
 
 
 def _sends_at(member: MemberRecord, send_time: datetime, night: date) -> bool:

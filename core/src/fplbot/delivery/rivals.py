@@ -18,6 +18,7 @@ from fplbot.delivery import texts
 from fplbot.delivery.gap_lines import backing as _backing
 from fplbot.delivery.gap_lines import name as _name
 from fplbot.delivery.gap_lines import xi_line as _line
+from fplbot.sources.fpl import LeagueKind
 from fplbot.store.footballer_stats import FootballerStatsStore
 from fplbot.store.leagues import LeagueStore, LeagueTable
 from fplbot.store.members import MemberRecord
@@ -61,7 +62,7 @@ class RivalGaps:
         if table is None or member.team_id is None:
             return texts.RIVALS_NO_LEAGUE
         context = _Context(season, squad, deadlines)
-        if table.kind == "h2h" and not everyone:
+        if table.kind == LeagueKind.H2H and not everyone:
             return await self._against_opponent(member, table, context)
         rows = (
             all_rivals(table.rows, member.team_id)

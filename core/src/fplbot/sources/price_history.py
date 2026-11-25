@@ -14,11 +14,10 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
-from zoneinfo import ZoneInfo
 
+from fplbot.clock import UK_ZONE
 from fplbot.sources.fpl import FplBadData
 
-UK = ZoneInfo("Europe/London")
 # A change is stamped a few seconds after 00:00 UK; going back half a day lands on its night.
 _TO_NIGHT = timedelta(hours=12)
 
@@ -54,7 +53,7 @@ class FplPriceChange:
     @property
     def night(self) -> date:
         """The UK date before the 00:00 UK price update that made this change."""
-        return (self.changed_at.astimezone(UK) - _TO_NIGHT).date()
+        return (self.changed_at.astimezone(UK_ZONE) - _TO_NIGHT).date()
 
 
 def price_snapshot(bootstrap: dict[str, Any]) -> list[FplPriceSnapshot]:

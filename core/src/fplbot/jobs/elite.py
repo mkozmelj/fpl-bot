@@ -47,6 +47,7 @@ from fplbot.sources.fpl import (
     FplStandings,
     FplUnexpectedStatus,
     FplUpdating,
+    LeagueKind,
     NewSeasonWaiting,
     Priority,
 )
@@ -182,7 +183,7 @@ class EliteSampler:
 
             async def page(number: int) -> FplStandings:
                 if number not in pages:
-                    table = await fpl.standings("classic", OVERALL_LEAGUE, number)
+                    table = await fpl.standings(LeagueKind.CLASSIC, OVERALL_LEAGUE, number)
                     if table is None:
                         raise FplUnexpectedStatus(404)
                     pages[number] = table

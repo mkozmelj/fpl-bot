@@ -14,7 +14,6 @@ Only parsed fields are stored, never raw responses or managers' names.
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
 
 from sqlalchemy import and_, delete, exists, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
@@ -163,7 +162,7 @@ class LeagueStore:
                         and_(
                             MemberLeague.member_id == H2hOpponent.member_id,
                             MemberLeague.season == H2hOpponent.season,
-                            MemberLeague.kind == "h2h",
+                            MemberLeague.kind == LeagueKind.H2H,
                             MemberLeague.league_id == H2hOpponent.league_id,
                         )
                     ),
@@ -302,5 +301,5 @@ async def _delete_orphaned_rival_picks(session: AsyncSession) -> None:
     )
 
 
-def _kind(value: str) -> Literal["classic", "h2h"]:
-    return "h2h" if value == "h2h" else "classic"
+def _kind(value: str) -> LeagueKind:
+    return LeagueKind.H2H if value == LeagueKind.H2H else LeagueKind.CLASSIC

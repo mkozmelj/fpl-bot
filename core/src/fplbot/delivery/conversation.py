@@ -12,9 +12,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
-from fplbot.advice.alert_time import UK
 from fplbot.advice.price_accuracy import price_accuracy
-from fplbot.clock import Clock
+from fplbot.clock import UK_ZONE, Clock
 from fplbot.delivery import texts
 from fplbot.delivery.elite import EliteGaps
 from fplbot.delivery.member_flow import GoalChanged, MemberFlow, SettingsChanged, TeamLinked
@@ -136,7 +135,7 @@ class Conversation:
     async def _accuracy(self, now: datetime) -> str:
         season = season_of(now)
         # The latest night whose 00:00 UK price update has happened.
-        last_night = now.astimezone(UK).date() - timedelta(days=1)
+        last_night = now.astimezone(UK_ZONE).date() - timedelta(days=1)
         outcomes = await self._price_history.outcomes(season)
         log.info("accuracy report shown")
         return render_accuracy(price_accuracy(outcomes, last_night=last_night), season)

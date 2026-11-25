@@ -20,8 +20,7 @@ import logging
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from fplbot.advice.alert_time import UK
-from fplbot.clock import Clock
+from fplbot.clock import UK_ZONE, Clock
 from fplbot.jobs.runner import Job, waiting_while_updating
 from fplbot.jobs.scheduler import PlannedRun
 from fplbot.sources.fpl import FplSource, FplUnexpectedStatus, Priority
@@ -70,7 +69,7 @@ class PriceArchive:
     async def plan(self, now: datetime) -> list[PlannedRun]:
         """Planner (``Scheduler.add``): last night's runs still to come or catch up (00:05,
         00:10) and today's."""
-        today = now.astimezone(UK).date()
+        today = now.astimezone(UK_ZONE).date()
         runs = [
             *await self.planned_runs(today - timedelta(days=1)),
             *await self.planned_runs(today),
@@ -81,8 +80,10 @@ class PriceArchive:
 
     async def planned_runs(self, night: date) -> list[PlannedRun]:
         """The runs for UK night ``night``, earliest first."""
-        snapshot_at = {datetime.combine(night, t, UK) for t in SNAPSHOT_TIMES}
-        news_at = {datetime.combine(night, time(hour), UK) for hour in NEWS_HOURS} - snapshot_at
+        snapshot_at = {datetime.combine(night, t, UK_ZONE) for t in SNAPSHOT_TIMES}
+        news_at = {
+            datetime.combine(night, time(hour), UK_ZONE) for hour in NEWS_HOURS
+        } - snapshot_at
         morning = night + timedelta(days=1)
         runs = [
             *(PlannedRun(at, NEWS_JOB, self.news_job(), Priority.ROUTINE) for at in news_at),
@@ -91,13 +92,13 @@ class PriceArchive:
                 for at in snapshot_at
             ),
             PlannedRun(
-                datetime.combine(morning, REFRESH_AT, UK),
+                datetime.combine(morning, REFRESH_AT, UK_ZONE),
                 REFRESH_JOB,
                 self.refresh_job(),
                 grace=REFRESH_GRACE,
             ),
             PlannedRun(
-                datetime.combine(morning, ARCHIVE_AT, UK),
+                datetime.combine(morning, ARCHIVE_AT, UK_ZONE),
                 ARCHIVE_JOB,
                 self.archive_job(night),
                 grace=ARCHIVE_GRACE,

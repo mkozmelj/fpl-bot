@@ -10,7 +10,7 @@ backup is a new message; after that, each backup overwrites the message holding 
 a new message is sent instead.
 
 Scheduling (ticket 31): ``app.py`` registers ``daily(MEMBER_BACKUP_JOB, ..., MEMBER_BACKUP_AT,
-MEMBER_BACKUP_ZONE)`` with the scheduler: once a day at 04:00 UK time, priority
+UK_ZONE)`` with the scheduler: once a day at 04:00 UK time, priority
 ``Priority.ROUTINE``. It makes no FPL requests.
 
 One backup per UK day: a sent backup gets a ``member-backup`` completion row for its UK date,
@@ -21,12 +21,11 @@ sends nothing.
 import logging
 from datetime import time
 from typing import Protocol
-from zoneinfo import ZoneInfo
 
 import pyrage
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from fplbot.clock import Clock
+from fplbot.clock import UK_ZONE, Clock
 from fplbot.delivery import texts
 from fplbot.sources.fpl import FplSource
 from fplbot.store.backup import BackupMessages, export_member_tables
@@ -39,7 +38,6 @@ log = logging.getLogger(__name__)
 MEMBER_BACKUP_JOB = "member-backup"
 # After the 00:10 price-change archive, when nothing else runs.
 MEMBER_BACKUP_AT = time(4, 0)
-MEMBER_BACKUP_ZONE = ZoneInfo("Europe/London")
 # Backups kept in the owner's chat.
 BACKUPS_KEPT = 7
 NO_KEY_NOTICE = "backup-no-key"
@@ -89,7 +87,7 @@ class MemberBackup:
             log.info("member backup skipped: no public key")
             return
         await self._notices.clear(NO_KEY_NOTICE)
-        season, period = season_of(now), night_period(now.astimezone(MEMBER_BACKUP_ZONE).date())
+        season, period = season_of(now), night_period(now.astimezone(UK_ZONE).date())
         if await self._completions.done(MEMBER_BACKUP_JOB, season, period):
             log.info("member backup already sent today")
             return

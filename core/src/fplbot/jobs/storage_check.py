@@ -9,7 +9,6 @@ which needs a key (store/usage.py); the runbook has a monthly console check inst
 
 import logging
 from datetime import time
-from zoneinfo import ZoneInfo
 
 from fplbot.clock import Clock
 from fplbot.delivery import texts
@@ -23,7 +22,6 @@ log = logging.getLogger(__name__)
 
 STORAGE_CHECK_JOB = "storage-check"
 STORAGE_CHECK_AT = time(4, 30)  # after the 04:00 Member backup
-STORAGE_CHECK_ZONE = ZoneInfo("Europe/London")
 WARN_AT_PERCENT = 70
 NOTICE = "neon-storage-70"
 

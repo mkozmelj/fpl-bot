@@ -144,6 +144,9 @@ def confirm_team(team_name: str, manager: str, overall_rank: int | None) -> str:
     return f'Found "{team_name}", managed by {manager}, {rank}.\nIs that you?'
 
 
+UNNAMED_MANAGER = "an unnamed manager"
+
+
 def ask_tz(alert_time: str) -> str:
     return (
         f"Which timezone are you in? Your nightly Price alert goes out at {alert_time} your "
@@ -160,6 +163,13 @@ def unknown_timezone(typed: str) -> str:
 
 def goal_league(league_name: str) -> str:
     return f"Mini-league: {league_name}"
+
+
+def team_with_id(team_name: str | None, team_id: int | None) -> str:
+    return f"{team_name} (ID {team_id})"
+
+
+TIMEZONE_NOT_SET = "not set"
 
 
 def summary(team: str, goal: str, timezone: str, alert_time: str) -> str:
@@ -243,8 +253,13 @@ WATCH_EMPTY = "Your Watch list is empty. Try /watch add Salah"
 WATCH_FULL = "Your Watch list is full (20). Remove someone first."
 
 
-def watch_line(name: str, club: str, position: str, price: str) -> str:
-    return f"{name} ({club}, {position}) {price}"
+def price(tenths: int) -> str:
+    """An FPL price in tenths of a million, as FPL shows it: 65 is "£6.5m"."""
+    return f"£{tenths / 10:.1f}m"
+
+
+def watch_line(name: str, club: str, position: str, price_tenths: int) -> str:
+    return f"{name} ({club}, {position}) {price(price_tenths)}"
 
 
 def watch_list(lines: list[str]) -> str:
@@ -272,9 +287,9 @@ def watch_already(name: str) -> str:
     return f"{name} is already on your Watch list."
 
 
-def watch_added(name: str, club: str, position: str, price: str) -> str:
+def watch_added(name: str, club: str, position: str, price_tenths: int) -> str:
     return (
-        f"Added {name} ({club}, {position}) at {price}. "
+        f"Added {name} ({club}, {position}) at {price(price_tenths)}. "
         "I'll flag him in the Price alert if he may rise."
     )
 
@@ -298,9 +313,12 @@ LIKELY = "Likely"
 
 
 def price_alert_line(
-    name: str, position: str, club: str, price: str, new_price: str, likelihood: str
+    name: str, position: str, club: str, price_tenths: int, new_price_tenths: int, likelihood: str
 ) -> str:
-    return f"• {name} {position} {club} {price} → {new_price} · {likelihood}"
+    return (
+        f"• {name} {position} {club} {price(price_tenths)} → {price(new_price_tenths)} "
+        f"· {likelihood}"
+    )
 
 
 def price_alert_tomorrow(mentions: list[tuple[str, bool]]) -> str:
@@ -482,6 +500,14 @@ def rivals_no_opponent(gameweek: int) -> str:
     )
 
 
+NOBODY = "nobody"  # no captain
+
+
+def unknown_footballer(footballer_id: int) -> str:
+    """A Footballer missing from stored reference data."""
+    return f"Footballer {footballer_id}"
+
+
 def rivals_line(
     name: str, you_start: bool, they_start: int, captain: tuple[bool, int] | None, edge: str
 ) -> str:
@@ -576,6 +602,15 @@ COMPUTE_HOURS_UNREADABLE = (
 
 def deploy_version(version: str, sha: str) -> str:
     return f"v{version} ({sha[:7]})"
+
+
+def duration(days: int, hours: int, minutes: int) -> str:
+    """An uptime: "2 d 3 h", "3 h 5 min" or "5 min"."""
+    if days:
+        return f"{days} d {hours} h"
+    if hours:
+        return f"{hours} h {minutes} min"
+    return f"{minutes} min"
 
 
 def status_uptime(uptime: str, version: str) -> str:

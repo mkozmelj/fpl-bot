@@ -11,36 +11,12 @@ A night with nothing for tonight is quiet: tomorrow's heads-up alone sends nothi
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import StrEnum
+
+from fplbot.sources.price_projections import Availability, FootballerPrice
 
 LIKELY = 4
 VERY_LIKELY = 5
 PRICE_STEP = 1  # FPL prices move by £0.1m (one tenth of a million) a night
-
-
-class Availability(StrEnum):
-    """FPL's status flag for a Footballer who may not play."""
-
-    DOUBTFUL = "doubtful"
-    INJURED = "injured"
-    SUSPENDED = "suspended"
-    UNAVAILABLE = "unavailable"
-
-
-@dataclass(frozen=True)
-class FootballerPrice:
-    """One Footballer's price outlook at alert time."""
-
-    id: int
-    name: str
-    position: str  # GKP, DEF, MID or FWD
-    club: str  # short club name
-    price: int  # tenths of a million: 65 is £6.5m
-    availability: Availability | None  # None: available
-    # FPL's likelihood codes for tonight's and tomorrow night's price update; None when FPL
-    # has no usable projection (missing, or the Footballer is still calibrating).
-    tonight: int | None
-    tomorrow: int | None
 
 
 @dataclass(frozen=True)

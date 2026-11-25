@@ -6,11 +6,37 @@ Each Footballer has ``price_change_projections``: one entry per coming price upd
 such a Footballer's codes are not used.
 """
 
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
-from fplbot.advice.price_alert import Availability, FootballerPrice
-from fplbot.sources.footballer_search import footballers_in
-from fplbot.sources.fpl import FplBadData
+from fplbot.sources.fpl import FplBadData, reference_in
+
+
+class Availability(StrEnum):
+    """FPL's status flag for a Footballer who may not play."""
+
+    DOUBTFUL = "doubtful"
+    INJURED = "injured"
+    SUSPENDED = "suspended"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True)
+class FootballerPrice:
+    """One Footballer's price outlook at alert time."""
+
+    id: int
+    name: str
+    position: str  # GKP, DEF, MID or FWD
+    club: str  # short club name
+    price: int  # tenths of a million: 65 is £6.5m
+    availability: Availability | None  # None: available
+    # FPL's likelihood codes for tonight's and tomorrow night's price update; None when FPL
+    # has no usable projection (missing, or the Footballer is still calibrating).
+    tonight: int | None
+    tomorrow: int | None
+
 
 _AVAILABILITY = {
     "d": Availability.DOUBTFUL,
@@ -25,11 +51,8 @@ def price_projections(bootstrap: dict[str, Any]) -> dict[int, FootballerPrice]:
     """Every Footballer's price outlook, by id. Raises ``FplBadData`` when the response has no
     projection fields at all (FPL dropped or renamed them): a data failure, not a quiet night.
     A Footballer without usable codes has ``tonight``/``tomorrow`` of ``None``."""
-    try:
-        footballers = footballers_in(bootstrap)
-        elements: list[dict[str, Any]] = bootstrap["elements"]
-    except KeyError, TypeError, ValueError:
-        raise FplBadData(200) from None
+    footballers = {f.id: f for f in reference_in(bootstrap).footballers}
+    elements: list[dict[str, Any]] = bootstrap["elements"]
     if not any("price_change_projections" in element for element in elements):
         raise FplBadData(200)
     prices: dict[int, FootballerPrice] = {}
@@ -38,10 +61,10 @@ def price_projections(bootstrap: dict[str, Any]) -> dict[int, FootballerPrice]:
         codes = _codes(element)
         prices[footballer.id] = FootballerPrice(
             id=footballer.id,
-            name=footballer.name,
+            name=footballer.web_name,
             position=footballer.position,
             club=footballer.club,
-            price=footballer.price_tenths,
+            price=footballer.now_cost,
             availability=_AVAILABILITY.get(str(element.get("status") or "a")),
             tonight=codes.get(0),
             tomorrow=codes.get(1),
