@@ -17,8 +17,9 @@ def render_price_alert(alert: PriceAlert) -> str:
         footer.append(texts.PRICE_SAVING_BOTH)
     elif alert.falls:
         footer.append(texts.PRICE_SAVING_FALLS)
-    else:
+    elif alert.rises:
         footer.append(texts.PRICE_SAVING_RISES)
+    # A night with only tomorrow's heads-up (story 46): no "before 00:00 UK" saving line.
     if alert.squad_may_be_stale:
         footer.append(texts.PRICE_STALE_SQUAD)
     blocks.append("\n".join(footer))
@@ -30,12 +31,8 @@ def _line(line: AlertLine) -> str:
         line.name,
         line.position,
         line.club,
-        _money(line.price),
-        _money(line.new_price),
+        line.price,
+        line.new_price,
         texts.VERY_LIKELY if line.very_likely else texts.LIKELY,
     )
     return f"{text} · {line.availability}" if line.availability else text
-
-
-def _money(tenths: int) -> str:
-    return f"£{tenths / 10:.1f}m"

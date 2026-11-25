@@ -22,7 +22,7 @@ class ViewRow:
 
 
 @dataclass(frozen=True)
-class Gap:
+class PointsGap:
     points: int
     team_name: str
 
@@ -31,8 +31,8 @@ class Gap:
 class LeagueView:
     rows: tuple[ViewRow, ...]
     you_in_table: bool
-    behind: Gap | None  # the Rival directly above you
-    ahead: Gap | None  # the Rival directly below you
+    behind: PointsGap | None  # the Rival directly above you
+    ahead: PointsGap | None  # the Rival directly below you
     # Points the leader is ahead of you; None when you lead (or are not in the table).
     leader_gap: int | None
 
@@ -62,7 +62,7 @@ def league_view(rows: Sequence[FplStanding], your_entry: int) -> LeagueView:
     return LeagueView(
         rows=view_rows,
         you_in_table=True,
-        behind=Gap(above.points - you.points, above.team_name) if above else None,
-        ahead=Gap(you.points - below.points, below.team_name) if below else None,
+        behind=PointsGap(above.points - you.points, above.team_name) if above else None,
+        ahead=PointsGap(you.points - below.points, below.team_name) if below else None,
         leader_gap=leader.points - you.points if leader and leader is not you else None,
     )

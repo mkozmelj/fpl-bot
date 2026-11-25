@@ -168,8 +168,32 @@ async def test_owned_rises_and_watch_list_falls_are_never_mentioned(bot: BotHarn
     assert len(watcher.replies) == before[1]
 
 
+async def test_a_night_with_only_tomorrows_changes_sends_just_the_tomorrow_line(
+    bot: BotHarness,
+) -> None:
+    # Story 46: nothing qualifies tonight, but tomorrow night is Very likely for an owned
+    # Footballer (Passmore) and a watched one (Testkeeper).
+    bot.fpl.respond(
+        "bootstrap-static/",
+        bootstrap({208: (-3, -5), 101: (3, 5), 213: (-3, -4), 102: (0, 5)}),
+    )
+    alice = await ljubljana_member(bot)
+    await alice.send("/watch add testkeeper")
+    await bot.advance(BACKFILL_TIME)
+
+    await run_price_alerts(bot)
+
+    assert alice.last_reply == (
+        "Price alert · GW11 · tonight 00:00 UK\n"
+        "\n"
+        "Tomorrow night (Very likely): Passmore to fall, Testkeeper to rise."
+    )
+
+
 async def test_a_quiet_night_sends_nothing(bot: BotHarness) -> None:
-    bot.fpl.respond("bootstrap-static/", bootstrap({101: (5, 5), 208: (-3, -5)}))
+    # Story 50: nothing tonight and nothing Very likely tomorrow night (Lastpick is only
+    # Likely; Testkeeper isn't on the Watch list; Fakesson is an owned rise).
+    bot.fpl.respond("bootstrap-static/", bootstrap({101: (5, 5), 213: (-3, -4), 102: (0, 5)}))
     alice = await ljubljana_member(bot)
     await bot.advance(BACKFILL_TIME)
     sent = len(bot.telegram.sent_messages)

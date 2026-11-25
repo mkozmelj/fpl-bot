@@ -14,7 +14,7 @@ from telegram import Update
 from telegram.ext import Application
 from telegram.request import BaseRequest
 
-from fplbot.clock import Clock, SystemClock
+from fplbot.clock import UK_ZONE, Clock, SystemClock
 from fplbot.config import Config
 from fplbot.delivery import telegram, texts
 from fplbot.delivery.conversation import Conversation
@@ -33,7 +33,6 @@ from fplbot.jobs.heartbeat import Heartbeat, HttpxPinger, Pinger
 from fplbot.jobs.member_backup import (
     MEMBER_BACKUP_AT,
     MEMBER_BACKUP_JOB,
-    MEMBER_BACKUP_ZONE,
     MemberBackup,
 )
 from fplbot.jobs.post_deadline import REFERENCE_JOB, PostDeadline
@@ -45,7 +44,6 @@ from fplbot.jobs.scheduler import Scheduler, daily
 from fplbot.jobs.storage_check import (
     STORAGE_CHECK_AT,
     STORAGE_CHECK_JOB,
-    STORAGE_CHECK_ZONE,
     StorageCheck,
 )
 from fplbot.sources.fake import DEFAULT_FIXTURES_DIR, FakeFplTransport
@@ -277,14 +275,14 @@ class FplBotApp:
         self.scheduler.add(self.price_alerts.plan)
         self.scheduler.add(self.price_archive.plan)
         self.scheduler.add(
-            daily(MEMBER_BACKUP_JOB, self.member_backup.run, MEMBER_BACKUP_AT, MEMBER_BACKUP_ZONE)
+            daily(MEMBER_BACKUP_JOB, self.member_backup.run, MEMBER_BACKUP_AT, UK_ZONE)
         )
         # Daily Neon storage cost guard (ticket 38): one owner DM past 70%.
         self.storage_check = StorageCheck(
             self.usage, OwnerNotices(self.engine), send_to_owner, self.clock
         )
         self.scheduler.add(
-            daily(STORAGE_CHECK_JOB, self.storage_check.run, STORAGE_CHECK_AT, STORAGE_CHECK_ZONE)
+            daily(STORAGE_CHECK_JOB, self.storage_check.run, STORAGE_CHECK_AT, UK_ZONE)
         )
 
         # Liveness ping for the owner's monitor (ticket 38): only while the scheduler is alive.

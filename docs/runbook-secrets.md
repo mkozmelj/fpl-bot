@@ -63,13 +63,6 @@ fresh `ready sha=` line and answers `/status`.
 4. Re-run the latest deploy workflow on `main` (or merge a trivial PR) and check it reaches the
    smoke check.
 
-### Anthropic API key (once used)
-
-1. Anthropic Console → the bot's dedicated workspace → API keys: create a new key, then disable and
-   delete the old one.
-2. Railway → Variables: replace `ANTHROPIC_API_KEY`, sealed, deploy.
-3. Confirm the workspace's hard monthly spend limit is still set.
-
 ### Backup `age` key pair
 
 1. `age-keygen -o backup.key` on a trusted machine; store the private key in the password manager,

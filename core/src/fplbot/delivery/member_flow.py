@@ -30,15 +30,23 @@ from zoneinfo import ZoneInfo
 
 from fplbot.advice.alert_time import price_alert_send_time
 from fplbot.advice.league_table import league_view
-from fplbot.advice.rivals import goal_table
-from fplbot.clock import Clock
+from fplbot.advice.rivals import goal_table, opponent_gameweek
+from fplbot.clock import UK_ZONE, Clock
 from fplbot.delivery import texts
 from fplbot.delivery.elite import EliteGaps
 from fplbot.delivery.messages import Button, Reply
 from fplbot.delivery.rivals import RivalGaps
 from fplbot.delivery.timezones import BUTTON_ZONES, resolve_timezone
-from fplbot.sources.footballer_search import Footballer, footballers_in, search
-from fplbot.sources.fpl import FplEntry, FplError, FplLeague, FplSource, Lookup
+from fplbot.sources.footballer_search import search
+from fplbot.sources.fpl import (
+    FplEntry,
+    FplError,
+    FplFootballer,
+    FplLeague,
+    FplSource,
+    LeagueKind,
+    Lookup,
+)
 from fplbot.store.leagues import LeagueStore, LeagueTable
 from fplbot.store.members import Goal, GoalLeague, MemberRecord, MemberStore
 from fplbot.store.reference import Deadlines, ReferenceStore
@@ -80,7 +88,7 @@ class ChatState:
     # Pending data for the open question.
     team: FplEntry | None = None
     leagues: dict[str, FplLeague] = field(default_factory=dict[str, FplLeague])
-    footballers: dict[str, Footballer] = field(default_factory=dict[str, Footballer])
+    footballers: dict[str, FplFootballer] = field(default_factory=dict[str, FplFootballer])
 
     def clear(self) -> None:
         self.step = None
@@ -434,8 +442,9 @@ class MemberFlow:
             return
         lines = [_league_text(table, member.team_id)]
         deadlines = await self._reference.deadlines(self._clock.now())
-        if table.kind == "h2h" and deadlines.next is not None:
-            gameweek = deadlines.next.id
+        current = opponent_gameweek(deadlines)
+        if table.kind == LeagueKind.H2H and current is not None:
+            gameweek = current.id
             opponent = await self._leagues.h2h_opponent(
                 member.number, season, table.league_id, gameweek
             )
@@ -508,7 +517,7 @@ class MemberFlow:
         turn.say(
             texts.watch_list(
                 [
-                    texts.watch_line(f.name, f.club, f.position, f.price)
+                    texts.watch_line(f.web_name, f.club, f.position, f.now_cost)
                     for f in (footballers[i] for i in watched if i in footballers)
                 ]
             )
@@ -532,7 +541,7 @@ class MemberFlow:
                 Step.WATCH_PICK,
                 texts.watch_ambiguous(typed),
                 [
-                    [(key, texts.watch_choice(f.name, f.club, f.position))]
+                    [(key, texts.watch_choice(f.web_name, f.club, f.position))]
                     for key, f in turn.state.footballers.items()
                 ],
             )
@@ -545,17 +554,17 @@ class MemberFlow:
             return
         await self._add_to_watch_list(turn, footballer)
 
-    async def _add_to_watch_list(self, turn: Turn, footballer: Footballer) -> None:
+    async def _add_to_watch_list(self, turn: Turn, footballer: FplFootballer) -> None:
         added = await self._watch_list.add(turn.member.chat_id, footballer.id, self._clock.now())
         if added is Added.ALREADY_THERE:
-            turn.say(texts.watch_already(footballer.name))
+            turn.say(texts.watch_already(footballer.web_name))
         elif added is Added.FULL:
             turn.say(texts.WATCH_FULL)
         else:
             log.info("member %d added a Footballer to their Watch list", turn.member.number)
             turn.say(
                 texts.watch_added(
-                    footballer.name, footballer.club, footballer.position, footballer.price
+                    footballer.web_name, footballer.club, footballer.position, footballer.now_cost
                 )
             )
 
@@ -575,18 +584,16 @@ class MemberFlow:
             return
         await self._watch_list.remove(turn.member.chat_id, matches[0].id, now)
         log.info("member %d removed a Footballer from their Watch list", turn.member.number)
-        turn.say(texts.watch_removed(matches[0].name))
+        turn.say(texts.watch_removed(matches[0].web_name))
 
-    async def _footballers(self) -> dict[int, Footballer] | None:
+    async def _footballers(self) -> dict[int, FplFootballer] | None:
         """This season's Footballers by id, from ``bootstrap-static``; ``None`` if FPL can't be
         reached or answers something unusable."""
         try:
-            return footballers_in(await self._fpl.bootstrap_static())
+            reference = await self._fpl.reference()
         except FplError:
             return None
-        except KeyError, TypeError, ValueError:
-            log.warning("bootstrap-static has an unexpected shape")
-            return None
+        return {f.id: f for f in reference.footballers}
 
     async def _unknown_command(self, turn: Turn, argument: str) -> None:
         turn.say(texts.UNKNOWN_COMMAND)
@@ -621,9 +628,9 @@ def _summary(member: MemberRecord) -> str:
     else:
         goal = texts.GOAL_OVERALL
     return texts.summary(
-        team=f"{member.team_name} (ID {member.team_id})",
+        team=texts.team_with_id(member.team_name, member.team_id),
         goal=goal,
-        timezone=member.timezone or "not set",
+        timezone=member.timezone or texts.TIMEZONE_NOT_SET,
         alert_time=_hhmm(member.alert_time),
     )
 
@@ -658,19 +665,19 @@ def _picks_hidden_note(deadlines: Deadlines, timezone: str | None) -> str | None
     """Between deadlines: which Gameweek's picks FPL still hides, and until when."""
     if deadlines.next is None or deadlines.last is None:
         return None
-    zone = ZoneInfo(timezone or "Europe/London")
+    zone = ZoneInfo(timezone) if timezone else UK_ZONE
     local = deadlines.next.deadline.astimezone(zone).strftime("%a %d %b %H:%M")
     return texts.picks_hidden(deadlines.next.id, local, deadlines.last.id)
 
 
-def _names(ids: Sequence[int], footballers: dict[int, Footballer]) -> list[str]:
-    return [footballers[i].name for i in ids if i in footballers]
+def _names(ids: Sequence[int], footballers: dict[int, FplFootballer]) -> list[str]:
+    return [footballers[i].web_name for i in ids if i in footballers]
 
 
 def _manager(entry: FplEntry) -> str:
     """ "Alex K." style: enough to recognise yourself, without echoing a full name."""
     initial = f" {entry.manager_last_name[0]}." if entry.manager_last_name else ""
-    return f"{entry.manager_first_name}{initial}".strip() or "an unnamed manager"
+    return f"{entry.manager_first_name}{initial}".strip() or texts.UNNAMED_MANAGER
 
 
 def _hhmm(moment: time | datetime) -> str:

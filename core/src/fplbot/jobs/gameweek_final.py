@@ -16,13 +16,14 @@ and have no completion row. With rows for both it does nothing at all (no FPL re
 Planning: when the stored reference data already says a missing Gameweek is final (e.g. at
 startup), the job runs at once (and again hourly while it keeps failing). Otherwise it polls:
 hourly, from 2 hours after the Gameweek's last kickoff (or its deadline when no fixture is
-stored), each poll refreshing reference data to see whether FPL has marked it final yet.
+stored), each poll refreshing reference data to see whether FPL has marked it final yet. No polls
+run between 00:00 and 08:00 UK; the first after that pause is at 08:00 UK.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
-from fplbot.clock import Clock
+from fplbot.clock import UK_ZONE, Clock
 from fplbot.jobs.followed_leagues import FollowedLeagues
 from fplbot.jobs.footballer_stats import FootballerStats
 from fplbot.jobs.runner import Job, waiting_while_updating
@@ -40,6 +41,10 @@ GW_FINAL_JOB = "gw-final"  # the name the owner sees
 GW_FINAL_COMPLETION = "gw_final"  # the completion row's job
 POLL_EVERY = timedelta(hours=1)
 POLL_AFTER_LAST_KICKOFF = timedelta(hours=2)
+# No polls overnight (UK): FPL rarely finishes checking a Gameweek then; the first poll after the
+# pause is at 08:00 UK.
+NO_POLLS_FROM = time(0, 0)
+NO_POLLS_UNTIL = time(8, 0)
 # A poll reuses a bootstrap-static fetched this recently.
 JUST_FETCHED = timedelta(minutes=5)
 
@@ -82,7 +87,7 @@ class GameweekFinal:
             kickoff = info.deadline if info else now
         return [
             PlannedRun(
-                at=_next_hour(max(now, kickoff + POLL_AFTER_LAST_KICKOFF)),
+                at=_poll_time(max(now, kickoff + POLL_AFTER_LAST_KICKOFF)),
                 name=GW_FINAL_JOB,
                 job=self.job(refresh=True),
             )
@@ -130,6 +135,16 @@ class GameweekFinal:
     async def _is_final(self, season: str, gameweek: int) -> bool:
         info = await self._reference.gameweek(season, gameweek)
         return info is not None and info.final
+
+
+def _poll_time(moment: datetime) -> datetime:
+    """The next whole hour from ``moment``, moved to 08:00 UK if it falls between 00:00 and
+    08:00 UK."""
+    at = _next_hour(moment)
+    local = at.astimezone(UK_ZONE)
+    if NO_POLLS_FROM <= local.time() < NO_POLLS_UNTIL:
+        return datetime.combine(local.date(), NO_POLLS_UNTIL, UK_ZONE)
+    return at
 
 
 def _next_hour(moment: datetime) -> datetime:

@@ -23,7 +23,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, ClassVar, Literal, Protocol
 
 from fplbot.clock import Clock
@@ -59,6 +59,7 @@ __all__ = [
     "PoliteFplClient",
     "Position",
     "Priority",
+    "reference_in",
 ]
 
 log = logging.getLogger(__name__)
@@ -326,8 +327,7 @@ class FplSource:
 
     async def reference(self, max_age: timedelta = BOOTSTRAP_MAX_AGE) -> FplReference:
         """Gameweeks, clubs and Footballers from the in-memory ``bootstrap-static``."""
-        data = await self.bootstrap_static(max_age)
-        return _parsed(_reference, data)
+        return reference_in(await self.bootstrap_static(max_age))
 
     async def fixtures(self) -> tuple[FplFixture, ...]:
         """Every fixture of the season (``fixtures/``)."""
@@ -397,7 +397,11 @@ class Lookup(Enum):
     UNAVAILABLE = "unavailable"  # FPL could not be reached or answered something unusable
 
 
-type LeagueKind = Literal["classic", "h2h"]
+class LeagueKind(StrEnum):
+    """How a Mini-league scores: classic (total points) or head-to-head."""
+
+    CLASSIC = "classic"
+    H2H = "h2h"
 
 
 @dataclass(frozen=True)
@@ -433,7 +437,7 @@ def _entry(data: dict[str, Any]) -> FplEntry:
         FplLeague(
             int(league["id"]), kind, str(league["name"]), _optional_int(league.get("entry_rank"))
         )
-        for kind in ("classic", "h2h")
+        for kind in LeagueKind
         for league in leagues.get(kind) or []
         if league.get("league_type") == _PRIVATE
     )
@@ -471,13 +475,18 @@ class FplClub:
 
 @dataclass(frozen=True)
 class FplFootballer:
-    id: int
-    web_name: str
+    id: int  # FPL element id: only meaningful within one season
+    web_name: str  # FPL's short display name
     first_name: str
     second_name: str
     club_id: int
+    club: str  # the club's short name, e.g. "ARS" ("?" if FPL lists no such club)
     position: Position
     now_cost: int  # tenths of a million: 55 is £5.5m
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.second_name}".strip()
 
 
 @dataclass(frozen=True)
@@ -556,7 +565,14 @@ def _optional_int(value: Any) -> int | None:
     return None if value is None else int(value)
 
 
+def reference_in(bootstrap: dict[str, Any]) -> FplReference:
+    """The one parser of ``bootstrap-static``'s Gameweeks, clubs and Footballers. Raises
+    ``FplBadData`` on a response of the wrong shape."""
+    return _parsed(_reference, bootstrap)
+
+
 def _reference(data: dict[str, Any]) -> FplReference:
+    club_names = {int(team["id"]): str(team["short_name"]) for team in data["teams"]}
     return FplReference(
         gameweeks=tuple(
             FplGameweek(
@@ -578,6 +594,7 @@ def _reference(data: dict[str, Any]) -> FplReference:
                 first_name=str(element.get("first_name") or ""),
                 second_name=str(element.get("second_name") or ""),
                 club_id=int(element["team"]),
+                club=club_names.get(int(element["team"]), "?"),
                 position=_POSITIONS[int(element["element_type"])],
                 now_cost=int(element["now_cost"]),
             )

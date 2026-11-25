@@ -7,6 +7,10 @@ scheduled waits in simulated time.
 import asyncio
 from datetime import UTC, datetime
 from typing import Protocol
+from zoneinfo import ZoneInfo
+
+# FPL runs on UK time: price updates at 00:00 UK, and the bot schedules its daily jobs in it.
+UK_ZONE = ZoneInfo("Europe/London")
 
 
 class Clock(Protocol):

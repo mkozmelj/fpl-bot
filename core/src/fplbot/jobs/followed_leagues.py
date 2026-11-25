@@ -125,7 +125,9 @@ class FollowedLeagues:
             opponents: list[Opponent] = []
             for f in followings:
                 for league in f.leagues:
-                    if league.kind != "h2h" or f not in followers.get(("h2h", league.id), []):
+                    if league.kind != LeagueKind.H2H or f not in followers.get(
+                        (LeagueKind.H2H, league.id), []
+                    ):
                         continue
                     for gameweek in gameweeks:
                         if opponent := await _opponent(fpl, f, league.id, gameweek):

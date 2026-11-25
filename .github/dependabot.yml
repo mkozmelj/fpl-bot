@@ -24,7 +24,7 @@ updates:
       actions:
         patterns: ["*"]
 
-  # The bot's Dockerfile (ticket 42) and the local docker-compose Postgres.
+  # The bot's Dockerfile (ticket 42).
   - package-ecosystem: docker
     directory: /
     schedule:
@@ -34,15 +34,4 @@ updates:
       default-days: 7
     groups:
       docker:
-        patterns: ["*"]
-
-  - package-ecosystem: docker-compose
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    cooldown:
-      default-days: 7
-    groups:
-      docker-compose:
         patterns: ["*"]

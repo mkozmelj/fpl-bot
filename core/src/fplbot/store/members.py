@@ -5,12 +5,13 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from enum import Enum, StrEnum
-from typing import Any, Literal
+from typing import Any
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from fplbot.sources.fpl import LeagueKind
 from fplbot.store.schema import Invite, Member
 from fplbot.store.seasons import season_of
 
@@ -45,7 +46,7 @@ class GoalLeague:
     """The Mini-league a Member's Goal targets."""
 
     id: int
-    kind: Literal["classic", "h2h"]
+    kind: LeagueKind
     name: str
 
 
@@ -197,7 +198,7 @@ class MemberStore:
 def _record(member: Member) -> MemberRecord:
     league = None
     if member.league_id is not None and member.league_name is not None:
-        kind: Literal["classic", "h2h"] = "h2h" if member.league_kind == "h2h" else "classic"
+        kind = LeagueKind.H2H if member.league_kind == LeagueKind.H2H else LeagueKind.CLASSIC
         league = GoalLeague(member.league_id, kind, member.league_name)
     return MemberRecord(
         number=member.id,

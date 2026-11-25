@@ -31,8 +31,8 @@ def xi_line(line: GapLine, names: dict[int, str]) -> str:
 
 def name(names: dict[int, str], footballer: int | None) -> str:
     if footballer is None:
-        return "nobody"
-    return names.get(footballer, f"Footballer {footballer}")
+        return texts.NOBODY
+    return names.get(footballer, texts.unknown_footballer(footballer))
 
 
 def percent(share: float) -> int:

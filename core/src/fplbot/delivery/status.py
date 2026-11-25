@@ -68,8 +68,4 @@ def _duration(elapsed: timedelta) -> str:
     minutes = int(elapsed.total_seconds() // 60)
     days, minutes = divmod(minutes, 24 * 60)
     hours, minutes = divmod(minutes, 60)
-    if days:
-        return f"{days} d {hours} h"
-    if hours:
-        return f"{hours} h {minutes} min"
-    return f"{minutes} min"
+    return texts.duration(days, hours, minutes)
