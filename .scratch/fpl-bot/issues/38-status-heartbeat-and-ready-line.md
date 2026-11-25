@@ -10,8 +10,12 @@
 
 **Blocked by:** 27: Polite FPL client and owner incident DMs; 31: Post-deadline picks job, scheduler and startup catch-up
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `/status` from the owner shows the fields above; from anyone else, nothing.
 - [ ] With `HEARTBEAT_URL` set and a fake clock, a ping goes out every 5 minutes; with the scheduler stopped, pings stop.
 - [ ] The `ready sha=` line and the "online" DM appear once at startup.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in 021ac26; review fix-ups in 1004dd3). Tests live in `core/tests/`.

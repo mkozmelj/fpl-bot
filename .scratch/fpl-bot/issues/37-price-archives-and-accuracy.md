@@ -11,10 +11,14 @@
 
 **Blocked by:** 36: Nightly Price alert
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] After fake-clock nights with recorded price-change fixtures, `/accuracy` shows hit rates per code for tonight and tomorrow and a season total.
 - [ ] The floor flag appears only when a bucket has at least 20 predictions over 14 nights and falls below its floor.
 - [ ] `/accuracy` from a Member gets no reply.
 - [ ] Re-running the 00:10 archive for a night is a no-op.
 - [ ] The news log gains a row only when a Footballer's news or status changes.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in e1d4eed; review fix-ups in 1004dd3). Tests live in `core/tests/`.

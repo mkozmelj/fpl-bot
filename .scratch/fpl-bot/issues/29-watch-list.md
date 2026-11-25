@@ -6,7 +6,7 @@
 
 **Blocked by:** 28: Join flow, settings and `/leave`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `/watch` lists each Footballer with club, position and price, or says the list is empty with an example.
 - [ ] `/watch add <name>` adds a single match and confirms with club, position and price.
@@ -15,3 +15,7 @@
 - [ ] `/watch remove <name>` removes a match from the list, or says it isn't there.
 - [ ] Watch list rows go when the Member leaves.
 - [ ] Tests through the seam cover the prototype's "Ambiguous Watch list" walkthrough.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in 9ba5579; review fix-ups in 1004dd3). Tests live in `core/tests/`.

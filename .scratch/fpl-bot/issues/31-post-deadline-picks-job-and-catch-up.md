@@ -11,10 +11,14 @@
 
 **Blocked by:** 27: Polite FPL client and owner incident DMs; 30: `/squad` and join backfill
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] With a fake clock passing a deadline, `/squad` afterwards shows the new Gameweek's Squad without any Member action.
 - [ ] While the fixture answers "updating", the job waits and re-probes, then completes once FPL answers.
 - [ ] Re-running the job for a completed Gameweek changes nothing visible and sends nothing.
 - [ ] Starting the bot after a missed deadline catches up the current and previous Gameweek.
 - [ ] A 403 during the job pauses it until its next run and DMs the owner once (via ticket 27).
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in ea1ab84; review fix-ups in 1004dd3). Tests live in `core/tests/`.

@@ -8,10 +8,14 @@ This ticket also starts the reference data kept across seasons: Footballers, clu
 
 **Blocked by:** 28: Join flow, settings and `/leave`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] After joining, `/squad` shows the last-deadline Squad with captain and vice-captain marked.
 - [ ] Before the next deadline the message states which Gameweek the Squad is from and that the upcoming Gameweek's picks are hidden until its deadline.
 - [ ] A Member whose picks for a Gameweek are missing (fixture with hidden picks) gets a clear message, not an error.
 - [ ] Member history and picks are deleted on `/leave`.
 - [ ] Command name follows the prototype (`/squad`).
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in 9f78666; review fix-ups in 1004dd3). Tests live in `core/tests/`.

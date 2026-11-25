@@ -13,7 +13,7 @@ Foundations this ticket lays (shape fixed by ticket 12 and ADRs 0001-0003):
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] Owner `/invite` replies with a single-use start link; the code has at least 64 bits of randomness, is stored only hashed, and expires after 48 hours (security ticket 16 overrides the prototype's 7 days).
 - [ ] Opening the link (`/start <code>`) allow-lists the chat immediately, marks the invite used, and greets the friend (setup itself is ticket 28).
@@ -24,3 +24,7 @@ Foundations this ticket lays (shape fixed by ticket 12 and ADRs 0001-0003):
 - [ ] Logs carry an internal Member number only, never chat IDs, team IDs or names.
 - [ ] The bot starts locally with no secrets besides a bot token and DB URL (fake FPL source selectable), and the test suite runs with no secrets at all.
 - [ ] Tests through the seam cover: invite redeem, cap reached, stranger silence, used and expired code.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in 2f0ae3b; review fix-ups in 1004dd3). Tests live in `core/tests/`.

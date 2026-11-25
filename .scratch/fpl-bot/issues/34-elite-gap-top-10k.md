@@ -10,7 +10,7 @@
 
 **Blocked by:** 33: Rival gap (`/rivals`)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] After a post-deadline run on recorded fixtures, `/gap` shows header, both sides (max 3 each) and edges in points per Gameweek.
 - [ ] Differences under 2× the margin of error or under 0.35 pts a Gameweek are hidden.
@@ -18,3 +18,7 @@
 - [ ] With no Elite figures yet, the bot says so and points to `/rivals`.
 - [ ] No sampled manager ID or pick survives the job (asserted on stored rows).
 - [ ] The sampler's requests run at the lowest priority of the shared limiter.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in 30c5dc0; review fix-ups in 1004dd3). Tests live in `core/tests/`.

@@ -15,7 +15,7 @@ Linking looks up the team on FPL through the sources adapter (entry and its leag
 
 **Blocked by:** 26: Walking skeleton: invite and redeem
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] Sending a team ID shows team name, manager and overall rank with "Is that you?" buttons; non-digits and unknown IDs get the prototype's replies; "No" asks again.
 - [ ] A team already linked to another Member is refused ("ask the owner").
@@ -26,3 +26,7 @@ Linking looks up the team on FPL through the sources adapter (entry and its leag
 - [ ] `/time HH:MM` sets the Price alert time (default 20:00 local); invalid times are rejected; when the time falls outside 17:00-23:15 UK it says so and states the real send time.
 - [ ] `/leave` asks once; confirming hard-deletes the Member and everything tied to them; the invite stays used, so the old code cannot rejoin. Test asserts the Member rows are gone.
 - [ ] Tests through the seam mirror the prototype walkthroughs: happy path, wrong team ID, same team twice, button tapped twice, no mini-league, typed timezone, leaving, abandoned setup.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in 06991a2; review fix-ups in 1004dd3). Tests live in `core/tests/`.

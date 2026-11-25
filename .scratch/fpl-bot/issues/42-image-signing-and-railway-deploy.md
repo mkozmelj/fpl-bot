@@ -12,8 +12,12 @@ Note: like ticket 41, this can't be run end to end until the repo is on GitHub a
 
 **Blocked by:** 38: `/status`, heartbeat and the `ready sha=` log line; 41: CI gates and open-source hygiene
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] The image builds locally and starts the bot against a local Postgres, logging `ready sha=`.
 - [ ] The deploy workflow passes actionlint and zizmor and contains scan, sign, attest, verify, redeploy, smoke check and rollback steps in that order.
 - [ ] The migration path (pre-deploy or advisory-lock fallback) is chosen with a note on which Railway docs confirmed it.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in 177dc43; review fix-ups in 1004dd3). Tests live in `core/tests/`.

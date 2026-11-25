@@ -17,7 +17,7 @@
 
 **Blocked by:** 27: Polite FPL client and owner incident DMs; 29: Watch list; 30: `/squad` and join backfill
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] With a fake clock, a Member at 20:00 Europe/Ljubljana gets the alert at the corresponding UK time; a time outside 17:00-23:15 UK is clamped.
 - [ ] Content, ordering, status flags, tomorrow line, no-repeat rule and savings line match the format above on recorded fixtures.
@@ -27,3 +27,7 @@
 - [ ] Missing fields or `price_change_calibrating` send nothing to Members.
 - [ ] An unreachable `bootstrap-static` is retried once after 10 minutes, then the owner gets exactly one DM and Members nothing.
 - [ ] Two Members with the same send time cause one fetch.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in debbc7c; review fix-ups in 1004dd3). Tests live in `core/tests/`.

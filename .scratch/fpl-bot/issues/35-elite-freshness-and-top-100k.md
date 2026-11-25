@@ -11,7 +11,7 @@
 
 **Blocked by:** 34: Elite gap, top 10k, full sample
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `/gap 100k` shows the top 100k cohort with its own sample size and margin of error.
 - [ ] A partial-sample fixture produces a "partial sample" label and a larger margin of error.
@@ -19,3 +19,7 @@
 - [ ] A late standings read is marked "read late" and still used.
 - [ ] A Member command sent during a sampler run is answered without waiting for the sampler.
 - [ ] Re-running the job for a completed Gameweek is a no-op; startup catch-up resumes a missing `elite` row.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in 0b4cd41; review fix-ups in 1004dd3). Tests live in `core/tests/`.

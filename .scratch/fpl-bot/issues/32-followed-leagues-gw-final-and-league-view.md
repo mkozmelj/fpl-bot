@@ -9,10 +9,14 @@
 
 **Blocked by:** 31: Post-deadline picks job, scheduler and startup catch-up
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `/league` renders the table with ▲/▼/– movement, the "you" marker, the two gap lines and the leader line.
 - [ ] A Member who is top or bottom gets only the lines that apply.
 - [ ] A Goal league with more than 50 managers shows only the followed subset, and says so.
 - [ ] After the Gameweek-final tick, `/league` reflects the new standings; re-running the job is a no-op.
 - [ ] A league no Member follows any more stops being refreshed.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in 8b1e957; review fix-ups in 1004dd3). Tests live in `core/tests/`.

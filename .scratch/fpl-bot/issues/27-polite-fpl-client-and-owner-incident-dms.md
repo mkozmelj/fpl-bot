@@ -12,7 +12,7 @@
 
 **Blocked by:** 26: Walking skeleton: invite and redeem
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Through the seam with a fake clock: a burst of FPL-bound work never exceeds 1 request a second, and interactive work overtakes queued low-priority work.
 - [x] A 429 with Retry-After is retried after that delay; a 5xx is retried with growing jittered delays and gives up after 5 tries.
@@ -21,3 +21,7 @@
 - [x] Every outgoing request carries the generic User-Agent and nothing identifying.
 - [x] Raw FPL responses are never written to the database.
 - [x] Fixtures exist for 503 "updating", 403, 429 and missing fields.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in d9d8037; review fix-ups in 1004dd3). Tests live in `core/tests/`.

@@ -11,9 +11,13 @@
 
 **Blocked by:** 33: Rival gap (`/rivals`); 37: Price archives and `/accuracy`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] A new-season fixture pauses alerts and advice and DMs the owner a checklist once.
 - [ ] `/rollover` needs confirmation and is refused for anyone but the owner.
 - [ ] After rollover, Members still exist, Rival data is gone, last season's aggregates are still queryable by season, and each Member gets one Goal reconfirmation prompt.
 - [ ] Running `/rollover` twice does nothing the second time.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in 1c82e50; review fix-ups in 1004dd3). Tests live in `core/tests/`.

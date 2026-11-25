@@ -18,7 +18,7 @@
 
 **Blocked by:** 32: Followed leagues, Gameweek-final job and `/league`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `/rivals` lists at most 3 qualifying Footballers per side against the nearest ±2 Rivals, with the captain-share line.
 - [ ] `/rivals all` uses the whole Goal league and says how many Rivals.
@@ -29,3 +29,7 @@
 - [ ] Between deadlines the caveat appears.
 - [ ] Rival picks for a league are deleted once no Member follows it.
 - [ ] Nothing is pushed: Gaps appear only in reply to a command.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in c18e00f; review fix-ups in 1004dd3). Tests live in `core/tests/`.

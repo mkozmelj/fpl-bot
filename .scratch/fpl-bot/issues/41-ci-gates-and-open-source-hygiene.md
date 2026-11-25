@@ -13,9 +13,13 @@ Note: the repo has no git remote yet, so workflows can be written and linted loc
 
 **Blocked by:** 26: Walking skeleton: invite and redeem
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] Workflows exist for every gate above and pass actionlint and zizmor locally.
 - [ ] The migration check fails on a sample drop-column migration and passes when it is labelled as a contract step.
 - [ ] A fork can follow the README with `.env.example` and docker-compose to run the bot and the tests with no owner secrets.
 - [ ] The listed docs exist and match tickets 16 and 23.
+
+## Answer
+
+Implemented on the integration branch `spec-25-phase-1` (merged in d6730ab; review fix-ups in 1004dd3). Tests live in `core/tests/`.
