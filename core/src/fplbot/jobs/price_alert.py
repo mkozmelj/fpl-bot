@@ -31,7 +31,14 @@ from fplbot.delivery.owner_alerts import OwnerAlerts
 from fplbot.delivery.price_alert import render_price_alert
 from fplbot.jobs.runner import Job
 from fplbot.jobs.scheduler import PlannedRun
-from fplbot.sources.fpl import FplBlocked, FplError, FplGameweek, FplSource, Priority
+from fplbot.sources.fpl import (
+    FplBlocked,
+    FplError,
+    FplGameweek,
+    FplSource,
+    NewSeasonWaiting,
+    Priority,
+)
 from fplbot.sources.price_projections import price_projections
 from fplbot.store.completions import CompletionStore
 from fplbot.store.members import MemberRecord, MemberStore
@@ -124,6 +131,8 @@ class PriceAlerts:
                 return
             try:
                 data = await self._fetch(fpl, night)
+            except NewSeasonWaiting:
+                raise  # paused, not a data failure (ticket 40)
             except FplError as error:
                 log.warning("price alert data failed: %s", error.code)
                 await self._owner_alerts.failed_once(
@@ -151,7 +160,7 @@ class PriceAlerts:
         cutoff = datetime.combine(night, WINDOW_CLOSES, UK)
         try:
             return await _night_data(fpl)
-        except FplBlocked:
+        except FplBlocked, NewSeasonWaiting:
             raise
         except FplError as error:
             if self._clock.now() + RETRY_AFTER > cutoff:

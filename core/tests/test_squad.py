@@ -46,9 +46,10 @@ async def test_history_and_picks_are_stored_on_join_and_deleted_on_leave(bot: Bo
     after_leaving = await bot.database_text()
 
     assert {"member_gameweeks", "member_picks"} <= tables_with_rows(stored)
-    # Kept: reference data (not about anyone) and the used invite.
+    # Kept: reference data (not about anyone), the current season and the used invite.
     assert tables_with_rows(after_leaving) == {
         "alembic_version",
+        "seasons",
         "invites",
         "clubs",
         "footballers",

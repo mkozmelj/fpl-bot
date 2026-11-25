@@ -490,3 +490,19 @@ class FootballerNews(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(8))
     news: Mapped[str] = mapped_column(Text)
+
+
+# --- Seasons (ticket 40): the current season, and a new one waiting for /rollover ---
+
+
+class Season(Base):
+    """An FPL season the bot has seen, such as ``"2026-27"``. ``started_at`` is when it became
+    the current season: when the bot first read its ``bootstrap-static`` (the first season), or
+    when the owner confirmed ``/rollover``. A row without ``started_at`` is a new season that FPL
+    already shows, waiting for ``/rollover``. Read and written by ``store/seasons.py``."""
+
+    __tablename__ = "seasons"
+
+    season: Mapped[str] = mapped_column(String(7), primary_key=True)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

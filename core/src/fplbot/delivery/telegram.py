@@ -8,7 +8,7 @@ chat IDs.
 import logging
 from typing import Any
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
 from telegram.ext import (
     Application,
@@ -59,6 +59,11 @@ def install(
 
 
 async def _send(context: ContextTypes.DEFAULT_TYPE, chat_id: int, replies: list[Reply]) -> None:
+    await send_replies(context.bot, chat_id, replies)
+
+
+async def send_replies(bot: Bot, chat_id: int, replies: list[Reply]) -> None:
+    """Send ``replies`` (with their inline keyboards) to ``chat_id``, also outside an update."""
     for reply in replies:
         markup = (
             InlineKeyboardMarkup(
@@ -70,4 +75,4 @@ async def _send(context: ContextTypes.DEFAULT_TYPE, chat_id: int, replies: list[
             if reply.keyboard
             else None
         )
-        await context.bot.send_message(chat_id, reply.text, reply_markup=markup)
+        await bot.send_message(chat_id, reply.text, reply_markup=markup)

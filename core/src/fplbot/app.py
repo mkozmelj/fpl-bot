@@ -36,7 +36,7 @@ from fplbot.jobs.member_backup import (
     MEMBER_BACKUP_ZONE,
     MemberBackup,
 )
-from fplbot.jobs.post_deadline import PostDeadline
+from fplbot.jobs.post_deadline import REFERENCE_JOB, PostDeadline
 from fplbot.jobs.price_alert import PriceAlerts
 from fplbot.jobs.price_archive import PriceArchive
 from fplbot.jobs.rival_picks import RivalPicks
@@ -62,11 +62,15 @@ from fplbot.store.owner_notices import OwnerNotices
 from fplbot.store.price_history import PriceHistoryStore
 from fplbot.store.reference import ReferenceStore
 from fplbot.store.rivals import RivalPicksStore
+from fplbot.store.seasons import Seasons
 from fplbot.store.squads import SquadStore
 from fplbot.store.usage import DatabaseUsage
 from fplbot.store.watch_list import WatchListStore
 
 log = logging.getLogger(__name__)
+
+# Jobs that keep running while a new season waits for /rollover (ticket 40): they read no FPL.
+_RUN_WHILE_NEW_SEASON_WAITS = frozenset({MEMBER_BACKUP_JOB, STORAGE_CHECK_JOB})
 
 
 class FplBotApp:
@@ -96,11 +100,19 @@ class FplBotApp:
             usage=self.usage,
         )
         self.members = MemberStore(self.engine)
+
+        async def new_season_seen(season: str, current: str) -> None:
+            await self._send_to_owner(texts.new_season_checklist(season, current))
+
+        # The current season, and a new one waiting for the owner's /rollover (ticket 40).
+        self.seasons = Seasons(self.engine, self.clock, new_season_seen)
         self._live_fpl: HttpxFplTransport | None = None
         if fpl_transport is None:
             fpl_transport = self._fpl_transport_for(config)
         # Every FPL request in the process goes through this one client (one rate limit).
         self.fpl = FplSource(PoliteFplClient(fpl_transport, self.clock))
+        # Every bootstrap-static passes the season guard: no new-season data under an old key.
+        self.fpl.check_bootstrap_with(self.seasons.check_bootstrap)
         # Reference data (Gameweeks, Footballers, clubs, fixtures) and Members' history/picks.
         self.reference = ReferenceStore(self.engine, self.clock)
         self.squads = SquadStore(self.engine)
@@ -158,6 +170,11 @@ class FplBotApp:
                 on_settings_changed=lambda: self.scheduler.rebuild(),
                 on_goal_changed=lambda: self.followed_leagues.recompute_soon(),
                 owner_status=self.status.report,
+                seasons=self.seasons,
+                send_replies=lambda chat_id, replies: telegram.send_replies(
+                    self.telegram.bot, chat_id, replies
+                ),
+                on_rolled_over=self._season_started,
             ),
         )
 
@@ -169,7 +186,14 @@ class FplBotApp:
         self._send_to_owner = send_to_owner
 
         self.owner_alerts = OwnerAlerts(send_to_owner, self.clock)
-        self.jobs = JobRunner(self.fpl, self.owner_alerts)
+        # While a new season waits for /rollover, only jobs that read no FPL data run.
+        self.jobs = JobRunner(
+            self.fpl,
+            self.owner_alerts,
+            paused=lambda job: (
+                self.seasons.waiting is not None and job not in _RUN_WHILE_NEW_SEASON_WAITS
+            ),
+        )
         # Nightly job (ticket 39); ticket 31 schedules it, see jobs/member_backup.py.
         self.member_backup = MemberBackup(
             self.engine,
@@ -274,6 +298,11 @@ class FplBotApp:
             healthy=lambda: self.scheduler.running,
         )
 
+    def _season_started(self) -> None:
+        """After ``/rollover``: plan the new season's jobs and read its reference data now."""
+        self.scheduler.rebuild()
+        self.jobs.start(REFERENCE_JOB, self.post_deadline.refresh_job(), Priority.ROUTINE)
+
     def _fpl_transport_for(self, config: Config) -> FplTransport:
         if config.fpl_source == "fake":
             return FakeFplTransport(config.fpl_fixtures_dir or DEFAULT_FIXTURES_DIR, self.clock)
@@ -282,6 +311,10 @@ class FplBotApp:
 
     async def __aenter__(self) -> Self:
         await self.telegram.initialize()
+        try:
+            await self.seasons.load()
+        except Exception as error:  # e.g. a database behind this image: start() says so
+            log.error("seasons not loaded: %s", type(error).__name__)
         return self
 
     def start_scheduling(self) -> None:
@@ -320,6 +353,7 @@ class FplBotApp:
         if not await schema_is_current(self.engine):
             log.error("startup aborted: the database is not at the latest migration")
             raise RuntimeError("the database is not at the latest migration")
+        await self.seasons.load()
         await self.telegram.start()
         updater = self.telegram.updater
         if updater is None:
