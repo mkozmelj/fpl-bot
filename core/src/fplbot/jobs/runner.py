@@ -13,7 +13,14 @@ from datetime import timedelta
 
 from fplbot.clock import Clock
 from fplbot.delivery.owner_alerts import OwnerAlerts
-from fplbot.sources.fpl import FplBlocked, FplError, FplSource, FplUpdating, Priority
+from fplbot.sources.fpl import (
+    FplBlocked,
+    FplError,
+    FplSource,
+    FplUpdating,
+    NewSeasonWaiting,
+    Priority,
+)
 
 log = logging.getLogger(__name__)
 
@@ -46,9 +53,13 @@ def waiting_while_updating(job: Job, clock: Clock) -> Job:
 
 
 class JobRunner:
-    def __init__(self, fpl: FplSource, alerts: OwnerAlerts) -> None:
+    def __init__(
+        self, fpl: FplSource, alerts: OwnerAlerts, paused: Callable[[str], bool] = lambda _: False
+    ) -> None:
         self._fpl = fpl
         self._alerts = alerts
+        # Whether a job (by name) must not run now: while a new season waits for /rollover.
+        self._paused = paused
         # Jobs running in the background; the test harness waits on these.
         self.running: set[asyncio.Task[bool]] = set()
 
@@ -60,9 +71,16 @@ class JobRunner:
         return task
 
     async def run(self, name: str, job: Job, priority: Priority) -> bool:
-        """Run ``job`` to completion; ``True`` if it succeeded."""
+        """Run ``job`` to completion; ``True`` if it succeeded. A paused job does not run."""
+        if self._paused(name):
+            log.info("job %s paused: a new season waits for /rollover", name)
+            return False
         try:
             await job(self._fpl.with_priority(priority))
+        except NewSeasonWaiting:
+            # Not a failure: the owner already has the new-season checklist.
+            log.info("job %s stopped: a new season waits for /rollover", name)
+            return False
         except FplError as error:
             log.warning("job %s failed: %s", name, error.code)
             await self._alerts.job_failed(name, error.code, urgent=isinstance(error, FplBlocked))

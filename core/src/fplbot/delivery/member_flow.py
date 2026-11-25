@@ -52,6 +52,9 @@ _TEAM_ID = re.compile(r"\d{1,9}")
 _ALERT_TIME = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
 # Commands a Member still in setup may use.
 _SETUP_COMMANDS = ("/start", "/leave")
+# Advice commands, paused while a new season waits for the owner's /rollover (ticket 40): they
+# would read or store last season's data. Add new advice commands here.
+PAUSED_WHILE_NEW_SEASON_WAITS = frozenset({"/squad", "/league", "/rivals", "/gap", "/watch"})
 # An ambiguous name offers one button per match, up to this many.
 _MAX_WATCH_CHOICES = 8
 
@@ -118,6 +121,8 @@ type TeamLinked = Callable[[int, int], None]
 type SettingsChanged = Callable[[], None]
 # Called after a Member's Goal is set or changed (during setup too): recomputes Followed leagues.
 type GoalChanged = Callable[[], None]
+# The new season waiting for the owner's /rollover, if any (ticket 40).
+type NewSeasonWaiting = Callable[[], str | None]
 
 
 class MemberFlow:
@@ -136,8 +141,10 @@ class MemberFlow:
         on_team_linked: TeamLinked,
         on_settings_changed: SettingsChanged = lambda: None,
         on_goal_changed: GoalChanged = lambda: None,
+        new_season_waiting: NewSeasonWaiting = lambda: None,
     ) -> None:
         self._members = members
+        self._new_season_waiting = new_season_waiting
         self._watch_list = watch_list
         self._fpl = fpl
         self._clock = clock
@@ -193,6 +200,8 @@ class MemberFlow:
             if member.joining and command not in _SETUP_COMMANDS:
                 turn.say(texts.FINISH_SETUP_FIRST)
                 await self._advance(turn)
+            elif command in PAUSED_WHILE_NEW_SEASON_WAITS and self._new_season_waiting():
+                turn.say(texts.NEW_SEASON_PAUSED)
             else:
                 await self._commands.get(command, self._unknown_command)(turn, text)
             return turn.replies
@@ -222,6 +231,14 @@ class MemberFlow:
         await handler(turn, choice)
         return turn.replies
 
+    def ask_goal_again(self, member: MemberRecord, season: str) -> list[Reply]:
+        """After a rollover (ticket 40): the Goal question of setup and ``/goal``, opened in the
+        Member's chat as if they had sent ``/goal``."""
+        turn = self._turn(member)
+        turn.state.clear()
+        self._ask_goal(turn, texts.reconfirm_goal(season))
+        return turn.replies
+
     def forget(self, chat_id: int) -> None:
         self._states.pop(chat_id, None)
 
@@ -249,10 +266,10 @@ class MemberFlow:
         else:
             turn.say(texts.saved(_summary(member)))
 
-    def _ask_goal(self, turn: Turn) -> None:
+    def _ask_goal(self, turn: Turn, text: str = texts.ASK_GOAL) -> None:
         turn.ask(
             Step.GOAL,
-            texts.ASK_GOAL,
+            text,
             [[("overall", texts.GOAL_OVERALL), ("league", texts.GOAL_LEAGUE)]],
         )
 
