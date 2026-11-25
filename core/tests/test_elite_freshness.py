@@ -13,8 +13,8 @@ Reservo and Placeholder 5%; Crossley 0%. Captain: Strikewell 96%, Fakesson 4%.
 
 from datetime import datetime, timedelta
 
-from tests.harness import BotHarness, canned_fpl_response
-from tests.test_elite_gap import SAMPLED, after_the_gw11_run, script_gw11
+from tests.harness import BotHarness, canned_fpl_response, fpl_fixture
+from tests.test_elite_gap import SAMPLED, after_the_gw11_run, sampled_squad, script_gw11
 from tests.test_league import advance_to, member_with_goal
 from tests.test_rivals import your_gw10_squad
 
@@ -77,7 +77,9 @@ async def test_gap_100k_captain_shows_the_top_100k_captains(elite_bot: BotHarnes
 
 def fpl_down_from(bot: BotHarness, entry: int, gameweek: int = 11) -> None:
     """FPL fails for good (502 on every try) from this sampled manager's Squad on."""
-    bot.fpl.respond(f"entry/{entry}/event/{gameweek}/picks/", canned_fpl_response("502-bad-gateway"))
+    bot.fpl.respond(
+        f"entry/{entry}/event/{gameweek}/picks/", canned_fpl_response("502-bad-gateway")
+    )
 
 
 async def test_a_sample_that_stops_past_half_its_target_is_published_as_partial(
@@ -131,3 +133,71 @@ async def test_a_sample_below_half_its_target_keeps_last_gameweeks_figures_with_
     assert alice.last_reply.startswith(
         "Elite gap · top 100k · captain\n⚠ Using GW11 figures (GW12 sample not finished).\n"
     )
+
+
+async def test_a_restart_after_a_partial_run_resamples_and_publishes_the_full_figures(
+    elite_bot: BotHarness,
+) -> None:
+    script_gw11(elite_bot)
+    fpl_down_from(elite_bot, SAMPLED[12])
+    alice = await member_with_goal(elite_bot, user_id=2001, team_id=1001)
+    await elite_bot.start_scheduling(price_history=False)
+    await advance_to(elite_bot, GW11_DEADLINE + timedelta(minutes=30))
+    await alice.send("/gap")
+    partial = alice.last_reply.split("\n")[1]
+
+    elite_bot.fpl.respond(f"entry/{SAMPLED[12]}/event/11/picks/", sampled_squad(12))
+    await elite_bot.restart()  # startup catch-up: GW11 has picks but no `elite` row
+    await elite_bot.advance(SETTLE)
+    await alice.send("/gap")
+    top_10k = alice.last_reply.split("\n")[1]
+    await alice.send("/gap 100k")
+
+    assert partial == "GW11 · sample 12 · ±24.0% (partial sample)"
+    assert top_10k == "GW11 · sample 20 · ±15.7%"
+    assert alice.last_reply.split("\n")[1] == "GW11 · sample 40 · ±19.3%"
+    assert "job_completions: ('2026-27', 'elite', 'gw11'," in await elite_bot.database_text()
+
+
+async def test_a_cohort_read_after_the_first_kickoff_is_used_and_marked_read_late(
+    elite_bot: BotHarness,
+) -> None:
+    script_gw11(elite_bot)
+    alice = await member_with_goal(elite_bot, user_id=2001, team_id=1001)
+    await elite_bot.start_scheduling(price_history=False)
+    await elite_bot.advance(SETTLE)
+    # FPL is "being updated" for 90 minutes after the GW11 deadline: the standings are read at
+    # 12:35, after the first kickoff (12:30).
+    updating = [canned_fpl_response("503-updating")] * 9
+    elite_bot.fpl.respond("event-status/", *updating, fpl_fixture("event-status/"))
+    await advance_to(elite_bot, GW11_DEADLINE + timedelta(hours=2))
+
+    await alice.send("/gap")
+    top_10k = alice.last_reply.split("\n")[1]
+    await alice.send("/gap 100k")
+
+    assert top_10k == "GW11 · sample 20 · ±15.7% · read late"
+    assert alice.last_reply.split("\n")[1] == "GW11 · sample 40 · ±19.3% · read late"
+
+
+async def test_a_member_command_during_a_sampler_run_is_answered_without_waiting_for_it(
+    elite_bot: BotHarness,
+) -> None:
+    script_gw11(elite_bot)
+    friend = await elite_bot.invited_friend(2002)
+    await advance_to(elite_bot, GW11_DEADLINE + timedelta(minutes=5))
+    elite_bot.start_job("picks", elite_bot.app.post_deadline.picks_job(11))
+    while len([r for r in elite_bot.fpl.requests if r.path.startswith("entry/77000")]) < 5:
+        await elite_bot.advance(timedelta(seconds=1))
+    sent_at = elite_bot.clock.now()
+
+    await friend.send("1002")  # a team ID: the bot looks the team up on FPL
+
+    answered_at = elite_bot.clock.now()
+    lookup = next(r for r in elite_bot.fpl.requests if r.path == "entry/1002")
+    assert friend.last_reply.startswith('Found "Bojan United"')
+    # Into the very next free slot of the shared 1 req/s limiter, ahead of the sampler.
+    assert lookup.at - sent_at <= timedelta(seconds=1)
+    assert answered_at - sent_at <= timedelta(seconds=1)
+    await elite_bot.advance(timedelta(minutes=2))  # the sampler carries on and finishes
+    assert "job_completions: ('2026-27', 'elite', 'gw11'," in await elite_bot.database_text()

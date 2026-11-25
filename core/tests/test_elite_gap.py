@@ -316,5 +316,6 @@ async def test_gap_with_an_unknown_view_says_how_to_use_it(elite_bot: BotHarness
     await alice.send("/gap everything")
 
     assert alice.last_reply == (
-        "Use /gap for your starting XI against the top 10k, or /gap captain for captains alone."
+        "Use /gap for your starting XI against the top 10k, or /gap captain for captains alone. "
+        "Add 100k for the top 100k: /gap 100k, /gap 100k captain."
     )

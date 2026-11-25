@@ -33,6 +33,8 @@ HELP = (
     "/rivals all\n"
     "/gap  where your Squad differs from the top 10k\n"
     "/gap captain\n"
+    "/gap 100k  the same against the top 100k\n"
+    "/gap 100k captain\n"
     "/watch  show your Watch list\n"
     "/watch add <name>\n"
     "/watch remove <name>\n"

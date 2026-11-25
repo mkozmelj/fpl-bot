@@ -127,6 +127,15 @@ class ReferenceStore:
             )
             return dict(rows.tuples().all())
 
+    async def first_kickoff(self, season: str, gameweek: int) -> datetime | None:
+        """The earliest stored kickoff of ``gameweek``'s fixtures, or None if none is stored."""
+        async with self._sessions() as session:
+            return await session.scalar(
+                select(func.min(Fixture.kickoff)).where(
+                    Fixture.season == season, Fixture.gameweek == gameweek
+                )
+            )
+
     async def last_kickoff(self, season: str, gameweek: int) -> datetime | None:
         """The latest stored kickoff of ``gameweek``'s fixtures, or None if none is stored."""
         async with self._sessions() as session:

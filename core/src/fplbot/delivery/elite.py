@@ -88,6 +88,7 @@ class EliteGaps:
                 figures.sample_size,
                 figures.margin_of_error,
                 partial=figures.partial,
+                read_late=figures.read_late,
             )
             if figures.gameweek == current
             else texts.gap_previous_figures(figures.gameweek, current),

@@ -118,6 +118,8 @@ COMMANDS: list[tuple[str, str]] = [
     ("/rivals all", ""),
     ("/gap", "where your Squad differs from the top 10k"),
     ("/gap captain", ""),
+    ("/gap 100k", "the same against the top 100k"),
+    ("/gap 100k captain", ""),
     ("/watch", "show your Watch list"),
     ("/watch add <name>", ""),
     ("/watch remove <name>", ""),
@@ -506,7 +508,10 @@ def rivals_opponent_captain(yours: str, theirs: str, same: bool) -> str:
 # --- /gap: the Elite gap (ticket 34; shape from eliteMessage in the Gap prototype) ---
 
 
-GAP_USAGE = "Use /gap for your starting XI against the top 10k, or /gap captain for captains alone."
+GAP_USAGE = (
+    "Use /gap for your starting XI against the top 10k, or /gap captain for captains alone. "
+    "Add 100k for the top 100k: /gap 100k, /gap 100k captain."
+)
 GAP_TEMPLATE = "No difference larger than the margin of error: you look like the template."
 
 
@@ -534,11 +539,17 @@ def gap_header(cohort: str, captain_only: bool = False) -> str:
 
 
 def gap_sample(
-    gameweek: int, sample_size: int, margin_of_error: float, *, partial: bool = False
+    gameweek: int,
+    sample_size: int,
+    margin_of_error: float,
+    *,
+    partial: bool = False,
+    read_late: bool = False,
 ) -> str:
     """``margin_of_error`` as a share (0.02 is ±2.0%)."""
     line = f"GW{gameweek} · sample {sample_size:,} · ±{margin_of_error * 100:.1f}%"
-    return line + (" (partial sample)" if partial else "")
+    line += " (partial sample)" if partial else ""
+    return line + (" · read late" if read_late else "")
 
 
 def gap_previous_figures(used: int, current: int) -> str:

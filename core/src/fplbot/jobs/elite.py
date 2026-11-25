@@ -1,22 +1,32 @@
-"""The Elite sampler (ticket 34): our own sample of the top 10k, on the official API.
+"""The Elite sampler (tickets 34, 35): our own samples of the top 10k and top 100k, on the
+official API (research 03's stratified design, about 4,400 requests a Gameweek).
 
 Run by the post-deadline job (``jobs/post_deadline.py``) for the last deadline's Gameweek while
 it is being played, in two steps reported to the owner as the job "elite":
 
-1. ``read_cohort``: the overall league's standings pages that fix the cohort (the first 10,000
-   managers in FPL's order: 200 pages of 50), before the Members' picks, aiming to finish
-   before the first kickoff;
-2. ``sample``, after the Members' and Rivals' picks: a simple random sample of the cohort sized
-   for ±2% at 95% (1,937 managers), one picks request each, tallied into shares
-   (``advice/elite.py``) and stored as aggregates only (``store/elite.py``), then the ``elite``
-   completion row.
+1. ``read_cohort``: the standings pages that fix the cohorts, before the Members' picks, aiming
+   to finish before the first kickoff (later, the cohorts are still used but marked "read
+   late"): all 200 pages of the top 10k, and 250 random pages of ranks 10,001-100,000 with 8
+   random managers drawn from each (the top 100k's second stratum);
+2. ``sample``, after the Members' and Rivals' picks: a simple random sample of the top 10k
+   (1,937 managers, ±2% at 95%), stored as soon as it is done, then the 2,000 drawn deeper
+   managers; the top 100k combines both strata (0.1 and 0.9). One picks request each, tallied
+   into shares (``advice/elite.py``) and stored as aggregates only (``store/elite.py``), then
+   the ``elite`` completion row.
+
+If the run stops early (FPL down, blocked...), each cohort not stored yet whose every stratum
+read at least half its target is published as a "partial sample" (margin of error from the
+Squads actually read); any other cohort keeps no figures for this Gameweek, so ``/gap`` shows
+last Gameweek's, labelled. No ``elite`` row is written, so the next planned run (a restart's
+catch-up) samples again. While FPL is "updating" the run waits and resumes where it stopped.
 
 Every request runs at ``Priority.ELITE``, the lowest of the shared limiter: interactive
-commands, the Price alert and routine jobs go first. The cohort's entry IDs live in memory for
-the length of one run; a sampled Squad only bumps counters. Neither is ever stored or logged.
+commands, the Price alert and routine jobs take the next free slot, and the sampler resumes
+after them. The cohorts' entry IDs live in memory for the length of one run; a sampled Squad
+only bumps counters. Neither is ever stored or logged.
 
-``EliteDesign`` is injectable so tests can run the sampler at a small scale (a cohort of one
-standings page, a deterministic draw).
+``EliteDesign`` is injectable so tests can run the sampler at a small scale (cohorts of one or
+two standings pages, a deterministic draw).
 """
 
 import logging
@@ -32,11 +42,12 @@ from fplbot.clock import Clock
 from fplbot.jobs.runner import JobRunner, waiting_while_updating
 from fplbot.sources.fpl import (
     STANDINGS_PAGE_SIZE,
-    FplSource,
     FplError,
+    FplSource,
     FplStandings,
     FplUnexpectedStatus,
     FplUpdating,
+    NewSeasonWaiting,
     Priority,
 )
 from fplbot.store.completions import CompletionStore, gameweek_period
@@ -103,6 +114,7 @@ class Cohort:
     gameweek: int
     entries: tuple[int, ...]  # the whole top cohort
     deeper: tuple[int, ...]  # the wider cohort's second stratum, already drawn
+    read_late: bool = False  # the standings were read after the Gameweek's first kickoff
 
 
 @dataclass
@@ -196,7 +208,10 @@ class EliteSampler:
                         if top.size < row.position <= wider.size
                     ]
                     deeper += design.draw(rows, min(wider.per_page, len(rows)))
-            read.append(Cohort(gameweek, tuple(entries), tuple(deeper)))
+            now = self._clock.now()
+            kickoff = await self._reference.first_kickoff(season_of(now), gameweek)
+            late = kickoff is not None and now > kickoff
+            read.append(Cohort(gameweek, tuple(entries), tuple(deeper), read_late=late))
 
         await self._jobs.run(ELITE_JOB, waiting_while_updating(job, self._clock), Priority.ELITE)
         return read[0] if read else None
@@ -239,6 +254,8 @@ class EliteSampler:
                             await self._save(season, cohort, estimate)
             except FplUpdating:
                 raise  # waited out, then resumed where it stopped (the tallies are kept)
+            except NewSeasonWaiting:
+                raise  # nothing is stored while a new season waits (ticket 40)
             except FplError:
                 # The run stops here. A cohort whose every stratum reached half its target is
                 # published as a partial sample; any other keeps last Gameweek's figures.
@@ -257,7 +274,9 @@ class EliteSampler:
         if any(stratum.tally.size == 0 for stratum in estimate.strata):
             raise FplUnexpectedStatus(404)  # not one sampled Squad of a stratum could be read
         strata = [Stratum(s.tally, s.size, s.target) for s in estimate.strata]
-        figures = elite_figures(estimate.name, cohort.gameweek, strata, partial=partial)
+        figures = elite_figures(
+            estimate.name, cohort.gameweek, strata, partial=partial, read_late=cohort.read_late
+        )
         if partial:
             # A rerun that stops early never replaces a full sample or a bigger partial one.
             stored = await self._store.figures(season, cohort.gameweek, estimate.name)
