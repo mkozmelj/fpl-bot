@@ -29,6 +29,9 @@ from fplbot.sources.fpl import NewSeasonWaiting
 from fplbot.store.schema import (
     Base,
     Club,
+    EliteChip,
+    EliteOwnership,
+    EliteSample,
     Fixture,
     FollowedLeague,
     Footballer,
@@ -128,6 +131,9 @@ KEPT_AT_ROLLOVER: tuple[type[Base], ...] = (
     PriceChange,
     PricePrediction,
     FootballerNews,
+    EliteSample,
+    EliteOwnership,
+    EliteChip,
 )
 
 

@@ -129,7 +129,7 @@ async def test_a_new_season_pauses_alerts_and_advice_and_dms_the_owner_a_checkli
     # One checklist, and no job-failure DMs about the paused jobs.
     assert bot.owner.replies[told_owner:] == checklists(bot.owner)
     assert len(checklists(bot.owner)) == 1
-    for command in ("/squad", "/league", "/rivals", "/watch"):
+    for command in ("/squad", "/league", "/rivals", "/gap", "/gap captain", "/watch"):
         await alice.send(command)
         assert alice.last_reply == PAUSED, command
     await alice.send("/time 19:30")

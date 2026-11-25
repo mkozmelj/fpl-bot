@@ -54,7 +54,7 @@ _ALERT_TIME = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
 _SETUP_COMMANDS = ("/start", "/leave")
 # Advice commands, paused while a new season waits for the owner's /rollover (ticket 40): they
 # would read or store last season's data. Add new advice commands here.
-PAUSED_WHILE_NEW_SEASON_WAITS = frozenset({"/squad", "/league", "/rivals", "/watch"})
+PAUSED_WHILE_NEW_SEASON_WAITS = frozenset({"/squad", "/league", "/rivals", "/gap", "/watch"})
 # An ambiguous name offers one button per match, up to this many.
 _MAX_WATCH_CHOICES = 8
 
