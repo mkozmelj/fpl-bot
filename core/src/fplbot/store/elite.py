@@ -35,6 +35,8 @@ class EliteFigures:
     margin_of_error: float  # as a share: 0.02 is ±2%
     footballers: Mapping[int, FootballerShares]
     chips: Mapping[str, float]  # FPL chip name -> share of the sample that played it
+    partial: bool = False  # the sampler stopped before its target (ticket 35)
+    read_late: bool = False  # the cohort's standings were read after the first kickoff
 
 
 class EliteStore:
@@ -60,6 +62,8 @@ class EliteStore:
                     sample_size=figures.sample_size,
                     margin_of_error=figures.margin_of_error,
                     sampled_at=at,
+                    partial=figures.partial,
+                    read_late=figures.read_late,
                 )
             )
             await session.flush()
@@ -112,4 +116,6 @@ class EliteStore:
                     for row in owned
                 },
                 chips={row.chip: row.share for row in chips},
+                partial=sample.partial,
+                read_late=sample.read_late,
             )

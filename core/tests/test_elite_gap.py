@@ -15,6 +15,10 @@ Backline 203, Blockley 205, Sparesby 207 and Strikewell 212, plus Tackleton 206 
 Reservo 211 (10, 50%), Placeholder 103 (10, 50%), Wallace 204 (5, 25%) and Lastpick 213 (19).
 Nobody starts Passmore, Dribbleton or Crossley. 12 captain Strikewell (the first with the Triple
 Captain chip), 8 Fakesson.
+
+The test "top 100k" (ticket 35) is the first 400 managers: the 40 above plus a second stratum,
+ranks 41-400, read as 2 standings pages (pages 1 and 2) with 10 managers from each (places
+41-60). Those 20 all field the same Squad (``deeper_squad``).
 """
 
 import json
@@ -31,19 +35,26 @@ GW11_DEADLINE = datetime.fromisoformat("2026-11-21T11:00:00Z")
 AFTER_THE_RUN = GW11_DEADLINE + timedelta(minutes=30)
 SETTLE = timedelta(minutes=2)
 
-ELITE = [7_700_000 + place for place in range(1, 51)]  # the overall league's first page
+ELITE = [7_700_000 + place for place in range(1, 101)]  # the overall league's first 2 pages
 SAMPLED = ELITE[:20]
+DEEPER_SAMPLED = ELITE[40:60]  # the test top 100k's second stratum
 
 ALL_START = [101, 102, 201, 202, 203, 205, 207, 212]
 NOBODY_STARTS = [208, 209, 210]
 
 
-def overall_league_page() -> FplResponse:
+def overall_league_page(page: int = 1) -> FplResponse:
+    first = (page - 1) * 50 + 1
     rows: list[Row] = [
-        (place, place, 900 - place, entry, f"Elite {place:02}")
-        for place, entry in enumerate(ELITE, start=1)
+        (place, place, 900 - place, ELITE[place - 1], f"Elite {place:03}")
+        for place in range(first, first + 50)
     ]
-    return standings("Overall", rows, has_next=True)
+    return standings("Overall", rows, page=page, has_next=True, first=first)
+
+
+def script_overall_league(bot: BotHarness) -> None:
+    bot.fpl.respond("leagues-classic/314/standings/", overall_league_page(1))
+    bot.fpl.respond("leagues-classic/314/standings/?page_standings=2", overall_league_page(2))
 
 
 def elite_picks(
@@ -83,12 +94,20 @@ def sampled_squad(i: int) -> FplResponse:
     return elite_picks(xi, bench, captain, chip="3xc" if i == 0 else None)
 
 
+def deeper_squad() -> FplResponse:
+    """Every sampled manager of the test top 100k's second stratum: Passmore, Dribbleton and
+    Wallace start, Strikewell is captain."""
+    return elite_picks([*ALL_START, 208, 209, 204], [103, 206, 211, 213], captain=212)
+
+
 def script_gw11(bot: BotHarness, yours: FplResponse | None = None) -> None:
     """The overall league, the sampled Squads and team 1001's GW11 Squad (default: its GW10
     one again)."""
-    bot.fpl.respond("leagues-classic/314/standings/", overall_league_page())
+    script_overall_league(bot)
     for i, entry in enumerate(SAMPLED):
         bot.fpl.respond(f"entry/{entry}/event/11/picks/", sampled_squad(i))
+    for entry in DEEPER_SAMPLED:
+        bot.fpl.respond(f"entry/{entry}/event/11/picks/", deeper_squad())
     bot.fpl.respond("entry/1001/event/11/picks/", yours or your_gw10_squad(gameweek=11))
 
 
@@ -186,9 +205,9 @@ async def test_differences_inside_twice_the_margin_of_error_or_under_035_pts_are
 async def test_with_nothing_beyond_the_noise_you_look_like_the_template(
     elite_bot: BotHarness,
 ) -> None:
-    for entry in (*SAMPLED, 1001):  # the whole sample fields Alice's Squad
+    for entry in (*SAMPLED, *DEEPER_SAMPLED, 1001):  # the whole sample fields Alice's Squad
         elite_bot.fpl.respond(f"entry/{entry}/event/11/picks/", your_gw10_squad(gameweek=11))
-    elite_bot.fpl.respond("leagues-classic/314/standings/", overall_league_page())
+    script_overall_league(elite_bot)
     alice = await member_with_goal(elite_bot, user_id=2001, team_id=1001)
     await elite_bot.start_scheduling(price_history=False)
     await advance_to(elite_bot, AFTER_THE_RUN)
@@ -260,7 +279,7 @@ async def test_a_failed_cohort_read_keeps_the_members_picks_and_a_restart_sample
     await alice.send("/gap")
     not_ready = alice.last_reply
 
-    elite_bot.fpl.respond("leagues-classic/314/standings/", overall_league_page())
+    script_overall_league(elite_bot)
     requested = len(elite_bot.fpl.requests)
     await elite_bot.restart()  # startup catch-up: GW11 has picks but no Elite sample
     await elite_bot.advance(SETTLE)
@@ -273,7 +292,7 @@ async def test_a_failed_cohort_read_keeps_the_members_picks_and_a_restart_sample
     assert alice.last_reply.startswith("Elite gap · top 10k · starting XI\nGW11 · sample 20")
     later = elite_bot.fpl.requested_paths[requested:]
     assert "entry/1001/event/11/picks" not in later
-    assert len([p for p in later if p.startswith("entry/77000")]) == 20
+    assert len([p for p in later if p.startswith("entry/77000")]) == 40  # both strata
 
 
 async def test_re_running_a_sampled_gameweek_makes_no_request(elite_bot: BotHarness) -> None:
@@ -297,5 +316,6 @@ async def test_gap_with_an_unknown_view_says_how_to_use_it(elite_bot: BotHarness
     await alice.send("/gap everything")
 
     assert alice.last_reply == (
-        "Use /gap for your starting XI against the top 10k, or /gap captain for captains alone."
+        "Use /gap for your starting XI against the top 10k, or /gap captain for captains alone. "
+        "Add 100k for the top 100k: /gap 100k, /gap 100k captain."
     )

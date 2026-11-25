@@ -21,6 +21,7 @@ from sqlalchemy import (
     Text,
     Time,
     UniqueConstraint,
+    false,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -365,7 +366,10 @@ class EliteSample(Base):
     """One Elite cohort's sample at one Gameweek's deadline (``cohort`` "10k": the overall top
     10,000 by FPL's order when the cohort was read). ``margin_of_error`` is the worst-case
     (p = 0.5) 95% margin of a share for ``sample_size`` managers out of ``cohort_size``, as a
-    share (0.02 is ±2%); ``target_size`` is the sample the design aimed for."""
+    share (0.02 is ±2%); ``target_size`` is the sample the design aimed for. ``cohort`` "100k"
+    (ticket 35) is estimated from two strata, its ``margin_of_error`` combining both. ``partial``:
+    the sampler stopped short of its target (published only past half of it); ``read_late``:
+    the cohort's standings were read after the Gameweek's first kickoff."""
 
     __tablename__ = "elite_samples"
 
@@ -377,6 +381,8 @@ class EliteSample(Base):
     sample_size: Mapped[int] = mapped_column(Integer)
     margin_of_error: Mapped[float] = mapped_column(Float)
     sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    partial: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    read_late: Mapped[bool] = mapped_column(Boolean, server_default=false())
 
 
 class EliteOwnership(Base):

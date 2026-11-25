@@ -5,8 +5,9 @@ Post-deadline job ("picks"), per Gameweek, from deadline +5 minutes:
 1. one cheap probe (``event-status/``); while FPL answers "The game is being updated", wait
    10 minutes and start again (``waiting_while_updating``; not counted as backoff tries);
 2. refresh reference data, as the "just after the deadline" ``bootstrap-static`` fetch;
-3. the Elite cohort's standings pages (ticket 34), before any picks, when the Elite sample is
-   due (``EliteSampler.due``: the last deadline's Gameweek, still being played);
+3. the Elite cohorts' standings pages (tickets 34, 35: top 10k and top 100k), before any
+   picks, when the Elite sample is due (``EliteSampler.due``: the last deadline's Gameweek,
+   still being played);
 4. each Member's locked Squad for the Gameweek;
 5. the Rivals' Squads (ticket 33), when the Gameweek is the last deadline's;
 6. the ``picks`` completion row for the Gameweek;
