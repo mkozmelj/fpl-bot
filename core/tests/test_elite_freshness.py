@@ -114,7 +114,9 @@ async def test_a_sample_below_half_its_target_keeps_last_gameweeks_figures_with_
     for entry in (*SAMPLED[:5], 1001):
         elite_bot.fpl.respond(f"entry/{entry}/event/12/picks/", your_gw10_squad(gameweek=12))
     fpl_down_from(elite_bot, SAMPLED[5], gameweek=12)
-    await advance_to(elite_bot, GW12_DEADLINE + timedelta(minutes=30))
+    await elite_bot.app.scheduler.stop()  # skip a week of hourly jobs: run GW12's by hand
+    await advance_to(elite_bot, GW12_DEADLINE + timedelta(minutes=5))
+    await elite_bot.run_job("picks", elite_bot.app.post_deadline.picks_job(12))
 
     await alice.send("/gap")
     top_10k = alice.last_reply.split("\n")
