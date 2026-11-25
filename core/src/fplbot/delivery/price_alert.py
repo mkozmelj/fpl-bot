@@ -17,8 +17,9 @@ def render_price_alert(alert: PriceAlert) -> str:
         footer.append(texts.PRICE_SAVING_BOTH)
     elif alert.falls:
         footer.append(texts.PRICE_SAVING_FALLS)
-    else:
+    elif alert.rises:
         footer.append(texts.PRICE_SAVING_RISES)
+    # A night with only tomorrow's heads-up (story 46): no "before 00:00 UK" saving line.
     if alert.squad_may_be_stale:
         footer.append(texts.PRICE_STALE_SQUAD)
     blocks.append("\n".join(footer))

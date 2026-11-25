@@ -270,6 +270,23 @@ async def test_after_the_gameweek_final_tick_league_shows_the_new_table_and_a_re
     assert len(bot.telegram.calls) == sent
 
 
+async def test_gameweek_final_polls_pause_overnight_and_resume_at_08_00_uk(bot: BotHarness) -> None:
+    # GW11's last kickoff is Sat 12:30 UK: hourly polls from 15:00 until FPL marks it final
+    # (never, here). Nobody is polled between 00:00 and 08:00 UK (GMT in November).
+    await bot.start_scheduling(price_history=False)
+    await advance_to(bot, datetime.fromisoformat("2026-11-21T22:30:00Z"))
+    evening = len(bot.fpl.requests)
+
+    await advance_to(bot, datetime.fromisoformat("2026-11-22T09:30:00Z"))
+
+    polls = [
+        f"{r.at:%a %H:%M}"
+        for r in bot.fpl.requests[evening:]
+        if r.path.startswith("bootstrap-static")
+    ]
+    assert polls == ["Sat 23:00", "Sun 08:00", "Sun 09:00"]
+
+
 async def test_a_league_no_member_follows_any_more_stops_being_refreshed(bot: BotHarness) -> None:
     alice = await member_with_goal(bot, user_id=2001, team_id=1001, league="Office League")
     bob = await member_with_goal(bot, user_id=2002, team_id=1002)
@@ -319,10 +336,17 @@ def h2h_match(home: tuple[int, str], away: tuple[int | None, str]) -> FplRespons
     return FplResponse(200, json.dumps(data).encode(), {"content-type": "application/json"})
 
 
-async def test_a_head_to_head_goal_league_also_names_the_next_opponent(bot: BotHarness) -> None:
+async def test_a_head_to_head_goal_league_also_names_the_opponent_this_gameweek(
+    bot: BotHarness,
+) -> None:
+    # The Gameweek being played is GW10 (the last deadline's), as in /rivals.
+    bot.fpl.respond(
+        "leagues-h2h-matches/league/601/?event=10&entry=1001&page=1",
+        h2h_match((3203, "Rival Rovers"), (1001, "Alex's Aces")),
+    )
     bot.fpl.respond(
         "leagues-h2h-matches/league/601/?event=11&entry=1001&page=1",
-        h2h_match((3203, "Rival Rovers"), (1001, "Alex's Aces")),
+        h2h_match((3201, "Knockout Kings"), (1001, "Alex's Aces")),
     )
     alice = await member_with_goal(bot, user_id=2001, team_id=1001, league="Cup Rivals H2H")
 
@@ -340,7 +364,7 @@ async def test_a_head_to_head_goal_league_also_names_the_next_opponent(bot: BotH
         "3 pts behind Knockout Kings\n"
         "3 pts ahead of Rival Rovers\n"
         "Leader 3 pts clear of you\n"
-        "GW11 opponent: Rival Rovers"
+        "GW10 opponent: Rival Rovers"
     )
 
 

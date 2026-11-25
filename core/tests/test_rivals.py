@@ -137,9 +137,15 @@ async def test_with_overall_rank_as_goal_rivals_come_from_the_followed_league(
 
 
 async def test_a_head_to_head_opponent_is_a_single_rival(bot: BotHarness) -> None:
+    # Story 21: "my opponent this Gameweek" is the one of GW10, the Gameweek being played (its
+    # deadline has passed), not GW11's.
+    bot.fpl.respond(
+        "leagues-h2h-matches/league/601/?event=10&entry=1001&page=1",
+        h2h_match((3203, "Rival Rovers"), (1001, "Alex's Aces")),
+    )
     bot.fpl.respond(
         "leagues-h2h-matches/league/601/?event=11&entry=1001&page=1",
-        h2h_match((3203, "Rival Rovers"), (1001, "Alex's Aces")),
+        h2h_match((3201, "Knockout Kings"), (1001, "Alex's Aces")),
     )
     bot.fpl.respond("entry/3203/event/10/picks/", RIVAL_D)
     alice = await member_with_goal(bot, user_id=2001, team_id=1001, league="Cup Rivals H2H")
@@ -148,7 +154,7 @@ async def test_a_head_to_head_opponent_is_a_single_rival(bot: BotHarness) -> Non
     await alice.send("/rivals")
 
     assert alice.last_reply == (
-        "Rival gap · Cup Rivals H2H · GW11 opponent Rival Rovers\n"
+        "Rival gap · Cup Rivals H2H · GW10 opponent Rival Rovers\n"
         "Squad as of the GW10 deadline. GW11 picks are hidden until its deadline.\n"
         "Rival picks are also as of the last deadline.\n"
         "\n"

@@ -5,7 +5,8 @@ Built on FPL's own price-change likelihood codes (-5..+5) for the coming price u
   Likely (+4) or Very likely (+5) to rise. Other directions are never mentioned.
 - tomorrow night: the same, Very likely (+/-5) only, leaving out anyone listed tonight. The
   night after is never shown.
-A night with nothing for tonight is quiet: tomorrow's heads-up alone sends nothing.
+A night with nothing for tonight but a Very likely change tomorrow night sends that heads-up
+alone (story 46); a night with neither is quiet (story 50).
 """
 
 from collections.abc import Collection, Iterable, Mapping, Sequence
@@ -53,19 +54,19 @@ def price_alert(
     prices: Mapping[int, FootballerPrice],
     squad_may_be_stale: bool,
 ) -> PriceAlert | None:
-    """The Member's alert for tonight, or ``None`` on a quiet night. Ids missing from
-    ``prices`` are skipped."""
+    """The Member's alert for tonight (possibly only tomorrow night's heads-up), or ``None`` on
+    a quiet night. Ids missing from ``prices`` are skipped."""
     mine = [prices[i] for i in dict.fromkeys(owned) if i in prices]
     watching = [prices[i] for i in dict.fromkeys(watched) if i in prices]
     falling = [p for p in mine if _likely(p.tonight, rise=False, at_least=LIKELY)]
     rising = [p for p in watching if _likely(p.tonight, rise=True, at_least=LIKELY)]
-    if not falling and not rising:
-        return None
     listed = {p.id for p in (*falling, *rising)}
     tomorrow = (
         *_tomorrow(mine, listed, rise=False),
         *_tomorrow(watching, listed, rise=True),
     )
+    if not falling and not rising and not tomorrow:
+        return None
     return PriceAlert(
         gameweek=gameweek,
         falls=_lines(falling, rise=False),

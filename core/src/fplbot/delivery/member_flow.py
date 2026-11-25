@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 
 from fplbot.advice.alert_time import price_alert_send_time
 from fplbot.advice.league_table import league_view
-from fplbot.advice.rivals import goal_table
+from fplbot.advice.rivals import goal_table, opponent_gameweek
 from fplbot.clock import UK_ZONE, Clock
 from fplbot.delivery import texts
 from fplbot.delivery.elite import EliteGaps
@@ -442,8 +442,9 @@ class MemberFlow:
             return
         lines = [_league_text(table, member.team_id)]
         deadlines = await self._reference.deadlines(self._clock.now())
-        if table.kind == LeagueKind.H2H and deadlines.next is not None:
-            gameweek = deadlines.next.id
+        current = opponent_gameweek(deadlines)
+        if table.kind == LeagueKind.H2H and current is not None:
+            gameweek = current.id
             opponent = await self._leagues.h2h_opponent(
                 member.number, season, table.league_id, gameweek
             )
