@@ -1,0 +1,12 @@
+FPL bot
+Copyright 2026 The FPL bot authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The transfer solver's formulation is derived from open-fpl-solver
+(https://github.com/solioanalytics/open-fpl-solver), Copyright the open-fpl-solver
+contributors, licensed under the Apache License, Version 2.0. See
+docs/adr/0002-own-solver-on-highs.md.
+
+This product is not affiliated with or endorsed by the Premier League or Fantasy Premier League.
+It uses public FPL data at run time and does not redistribute it.

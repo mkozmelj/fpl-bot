@@ -1,0 +1,8 @@
+# Allow-list: the image needs only the locked project and its source. Nothing else (no .env, no
+# .git, no tests or fixtures, no local .venv) reaches the build context.
+*
+!core/pyproject.toml
+!core/uv.lock
+!core/README.md
+!core/src/
+**/__pycache__

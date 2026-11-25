@@ -8,3 +8,13 @@
 .env
 .env.*
 !.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Local Claude Code state (worktrees, settings)
+.claude/

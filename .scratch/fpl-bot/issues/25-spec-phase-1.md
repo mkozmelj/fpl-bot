@@ -1,7 +1,7 @@
 # Spec: Phase 1, Squad, Rival and Elite gaps, and the nightly Price alert
 
 Type: spec
-Status: open
+Status: resolved
 Labels: ready-for-agent
 Assignee: —
 Blocked by: —

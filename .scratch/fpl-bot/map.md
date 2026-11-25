@@ -138,6 +138,7 @@ Phases:
   - **Backups:** a nightly `age`-encrypted export of the Member tables to the owner's Telegram chat. The rest relies on Neon's restore window.
   - **Rollover:** owner-confirmed `/rollover`, with a `season` column on every table.
   - **Owner tools:** a read-only `/status` and cost guards.
+- [Spec: Phase 1, Squad, Rival and Elite gaps, and the nightly Price alert](issues/25-spec-phase-1.md): Implemented in tickets 26-42 on branch `spec-25-phase-1` (171 tests green). Deferred from the code review: splitting `member_flow.py` and `sources/fpl.py`, keying the Watch list on the Member number instead of the chat ID, and de-duplicating the workflows' tool-install steps. To check before go-live: whether FPL issues new team IDs each season (rollover keeps them), and that Railway's pre-deploy migration runs on the image service.
 
 ## Not yet specified
 
