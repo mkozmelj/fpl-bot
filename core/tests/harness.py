@@ -35,7 +35,7 @@ from telegram.request import BaseRequest, RequestData
 from fplbot import logs
 from fplbot.app import FplBotApp
 from fplbot.config import Config
-from fplbot.jobs.elite import EliteCohort, EliteDesign
+from fplbot.jobs.elite import EliteCohort, EliteDesign, WiderCohort
 from fplbot.jobs.runner import Job
 from fplbot.sources.fake import FakeFplTransport
 from fplbot.sources.fpl import FplResponse, Priority
@@ -58,9 +58,13 @@ DEPLOY_SHA = "0123abcdef0123abcdef0123abcdef0123abcdef"
 DEFAULT_START = datetime(2026, 11, 19, 18, 0, tzinfo=UTC)
 # The Elite sampler at test scale (``elite_bot`` fixture): the "top 10k" is the first 40
 # managers of the overall league (one standings page) and the sample is 20 of them, always
-# the 20 ranked highest (production draws at random), so tests know whose picks are read.
+# the 20 ranked highest (production draws at random), so tests know whose picks are read. The
+# "top 100k" is the first 400: those 40 (a tenth, as in production) plus ranks 41-400, read as
+# the first 2 of their standings pages (1 and 2) and the first 10 of those ranks on each.
 TEST_ELITE_DESIGN = EliteDesign(
-    cohort=EliteCohort("10k", size=40, target=20), draw=lambda entries, n: entries[:n]
+    cohort=EliteCohort("10k", size=40, target=20),
+    wider=WiderCohort("100k", size=400, pages=2, per_page=10),
+    draw=lambda entries, n: entries[:n],
 )
 
 
