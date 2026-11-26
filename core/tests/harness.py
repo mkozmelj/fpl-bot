@@ -492,6 +492,10 @@ class BotHarness:
             )
             if not task.done()
         }
+        # A job that has just finished still has its done callbacks queued (the runner dropping
+        # it from ``running``, the scheduler's re-plan); they run on the next loop turn. Until
+        # they have, the bot is not settled: moving time now would skip work that re-plan starts.
+        finishing = [task for task in self.app.jobs.running if task.done()]
         # Waiting for a held lock counts as parked: the holder is either awake work itself
         # (so we keep settling) or asleep on the clock (so time has to move on).
         parked = {task for task in tasks if self.clock.is_asleep(task) or _waiting_for_lock(task)}
@@ -505,7 +509,7 @@ class BotHarness:
                 if task not in parked and awaited[task] and awaited[task] <= parked:
                     parked.add(task)
                     changed = True
-        return [task for task in work if task not in parked]
+        return [*finishing, *(task for task in work if task not in parked)]
 
     async def restart(self, config: Config | None = None) -> None:
         """Stop the bot and start a fresh process against the same database, clock, Telegram
