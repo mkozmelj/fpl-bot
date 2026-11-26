@@ -1,5 +1,5 @@
-# The bot's one image (ADR 0001, ADR 0003). CI builds it once per commit on main, scans it with
-# Trivy, pushes it to GHCR, signs it and attests its provenance; Railway runs that exact digest.
+# The bot's one image (ADR 0003, ADR 0004). Railway builds it from main after CI passes; CI builds
+# the same file on every pull request and scans it with Trivy.
 #
 #   docker build --build-arg GIT_SHA="$(git rev-parse HEAD)" -t fplbot .
 #
@@ -27,9 +27,14 @@ COPY core/src ./src
 RUN uv sync --locked --no-dev --no-editable
 
 FROM python:3.14-slim-trixie@sha256:22eafb370920ad8b429e0aec3fff433e0669968519f5d60469d83729c138b28b
+# Debian often ships security fixes (e.g. libzstd1, CVE-2026-124851) before the Python image is
+# rebuilt, so apply pending Debian updates here; the pinned digest still fixes everything else.
 # The bot never installs anything at runtime: drop the base image's pip (and the copies of
 # urllib3, msgpack and setuptools it vendors, which Trivy would otherwise flag).
-RUN python -m pip uninstall --yes --quiet pip \
+RUN apt-get update \
+ && apt-get upgrade --yes --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/* \
+ && python -m pip uninstall --yes --quiet pip \
  && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin fplbot
 COPY --from=build /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH \
@@ -37,8 +42,9 @@ ENV PATH=/app/.venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 USER 10001:10001
-# The commit this image was built from: the `ready sha=<commit>` startup line and /status. Last,
-# so a new commit rebuilds only this layer.
-ARG GIT_SHA=unknown
+# The commit this image was built from, for local builds: the `ready sha=<commit>` startup line and
+# /status. Left empty by default, so on Railway the bot falls back to RAILWAY_GIT_COMMIT_SHA, which
+# Railway sets at runtime for deploys from GitHub. Last, so a new commit rebuilds only this layer.
+ARG GIT_SHA=
 ENV GIT_SHA=$GIT_SHA
 CMD ["fplbot"]

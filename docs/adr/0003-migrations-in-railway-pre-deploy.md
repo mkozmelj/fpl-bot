@@ -4,8 +4,10 @@
 
 Verified against Railway's docs when the pipeline was built (ticket 42, 24 Nov 2026): pre-deploy fits an image-based service, so the advisory-lock fallback isn't used. The pages that confirmed it are listed in `docs/runbook-secrets.md`, "Deploys".
 
+Amended by ADR 0004 (26 Nov 2026): Railway now builds the image from the GitHub repo itself, so the pre-deploy command runs from Railway's own build of the commit being deployed rather than from a signed GHCR image, and CI holds no secret at all (the Railway project token is gone). Everything else here still holds.
+
 ## Consequences
 
 - Migrations must be backward-compatible with the previous image (expand then contract), because a rollback runs the old image against the new schema. The bot's startup check and `fplbot migrate` therefore accept a database ahead of the image. A CI check rejects drop or rename operations unless the migration is labelled as a contract step.
 - Migrations are tested in CI against a throwaway Postgres container only, so there is no DB secret in CI.
-- The smoke check is a `ready sha=<commit>` log line, read with the Railway token.
+- The bot logs `ready sha=<commit>` once it is up; since ADR 0004 the owner checks it in Railway's deployment logs (there is no scripted smoke check).
