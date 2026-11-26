@@ -27,9 +27,14 @@ COPY core/src ./src
 RUN uv sync --locked --no-dev --no-editable
 
 FROM python:3.14-slim-trixie@sha256:22eafb370920ad8b429e0aec3fff433e0669968519f5d60469d83729c138b28b
+# Debian often ships security fixes (e.g. libzstd1, CVE-2026-124851) before the Python image is
+# rebuilt, so apply pending Debian updates here; the pinned digest still fixes everything else.
 # The bot never installs anything at runtime: drop the base image's pip (and the copies of
 # urllib3, msgpack and setuptools it vendors, which Trivy would otherwise flag).
-RUN python -m pip uninstall --yes --quiet pip \
+RUN apt-get update \
+ && apt-get upgrade --yes --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/* \
+ && python -m pip uninstall --yes --quiet pip \
  && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin fplbot
 COPY --from=build /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH \
