@@ -149,6 +149,7 @@ Phases:
 ## Open tickets
 
 - [Web dashboard: views and auth](issues/24-web-dashboard.md): grilling, on the frontier.
+- [Spec: Phase 2, Expected points, captain and bench advice, Scout overrides and `/why`](issues/43-spec-phase-2.md): accepted by the owner 2026-11-26 (including every decision marked **(new)**), cut into tickets 44-59, ready for `/implement-spec`. 44, 47 can start at once; 45 and 46 follow 44; 49 needs 45-47; 50, 51, 54 follow 49; 52 and 53 follow 51; 55 needs 50, 52, 53; 56 and 57 need 54 and 55; 58 needs 51 and 56; 48 follows 47; 59 closes it out.
 
 ## Out of scope
 
