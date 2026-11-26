@@ -3,9 +3,10 @@
 Required: ``TELEGRAM_BOT_TOKEN``, ``DATABASE_URL`` and ``OWNER_TELEGRAM_ID``. Everything else is
 optional so a fork runs with nothing but a bot token and a Postgres URL.
 
-The deployed commit comes from ``GIT_SHA`` (baked into the image as a build argument), else
-Railway's ``RAILWAY_GIT_COMMIT_SHA`` (set only for deploys triggered from a GitHub repo, not for
-image deploys), else ``"unknown"``. It is what the ``ready sha=<commit>`` startup line carries.
+The deployed commit comes from ``GIT_SHA`` (a build argument, for local builds), else Railway's
+``RAILWAY_GIT_COMMIT_SHA`` (set for deploys triggered from the GitHub repo, which is how
+production deploys; ADR 0004), else ``"unknown"``. An empty ``GIT_SHA`` counts as unset. It is
+what the ``ready sha=<commit>`` startup line carries.
 """
 
 from collections.abc import Mapping

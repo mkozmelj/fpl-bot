@@ -70,8 +70,9 @@ is the storage the owner is warned about at 70%.
 The production image is the repo-root `Dockerfile` (`docker build --build-arg GIT_SHA=<commit>
 -t fplbot .` from the repo root); it holds no tests or fixtures, so to try it with
 `FPL_SOURCE=fake` mount them: `-v "$PWD/core/tests/fixtures/fpl:/fixtures:ro" -e
-FPL_FIXTURES_DIR=/fixtures`. `fplbot migrate` is Railway's pre-deploy command, `fplbot` the start
-command. Deploys: `docs/runbook-secrets.md`, "Deploys".
+FPL_FIXTURES_DIR=/fixtures`. Railway builds the same `Dockerfile` from `main` after CI (ADR 0004);
+`fplbot migrate` is its pre-deploy command, `fplbot` the start command. Deploys:
+`docs/runbook-secrets.md`, "Deploys".
 `FPL_SOURCE=live` (the default) calls the real FPL API through the polite client: at most 1
 request a second, a generic browser User-Agent, backoff on 429/5xx, never a retry on 403.
 

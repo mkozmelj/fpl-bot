@@ -1,5 +1,5 @@
-# The bot's one image (ADR 0001, ADR 0003). CI builds it once per commit on main, scans it with
-# Trivy, pushes it to GHCR, signs it and attests its provenance; Railway runs that exact digest.
+# The bot's one image (ADR 0003, ADR 0004). Railway builds it from main after CI passes; CI builds
+# the same file on every pull request and scans it with Trivy.
 #
 #   docker build --build-arg GIT_SHA="$(git rev-parse HEAD)" -t fplbot .
 #
@@ -37,8 +37,9 @@ ENV PATH=/app/.venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 USER 10001:10001
-# The commit this image was built from: the `ready sha=<commit>` startup line and /status. Last,
-# so a new commit rebuilds only this layer.
-ARG GIT_SHA=unknown
+# The commit this image was built from, for local builds: the `ready sha=<commit>` startup line and
+# /status. Left empty by default, so on Railway the bot falls back to RAILWAY_GIT_COMMIT_SHA, which
+# Railway sets at runtime for deploys from GitHub. Last, so a new commit rebuilds only this layer.
+ARG GIT_SHA=
 ENV GIT_SHA=$GIT_SHA
 CMD ["fplbot"]

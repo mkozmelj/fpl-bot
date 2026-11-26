@@ -8,6 +8,7 @@ import re
 from dataclasses import replace
 from datetime import timedelta
 
+from fplbot.config import Config
 from tests.harness import DEPLOY_SHA, BotHarness
 
 HEARTBEAT_URL = "https://monitor.example.test/ping/check-1"
@@ -100,6 +101,30 @@ async def test_startup_logs_ready_with_the_commit_and_tells_the_owner_online(
     ] * 2
     assert bot.owner.replies == ["online v0.1.0 (0123abc)"] * 2
     assert any(call.method == "getUpdates" for call in bot.telegram.calls)
+
+
+async def test_a_railway_build_logs_the_commit_railway_deployed(bot: BotHarness) -> None:
+    # Railway builds from GitHub (ADR 0004): the image's GIT_SHA build argument is left empty, and
+    # Railway sets RAILWAY_GIT_COMMIT_SHA at runtime.
+    railway_sha = "fedcba9876543210fedcba9876543210fedcba98"
+    config = Config.from_env(
+        {
+            "TELEGRAM_BOT_TOKEN": bot.config.telegram_bot_token,
+            "DATABASE_URL": bot.config.database_url,
+            "OWNER_TELEGRAM_ID": str(bot.config.owner_telegram_id),
+            "FPL_SOURCE": "fake",
+            "GIT_SHA": "",
+            "RAILWAY_GIT_COMMIT_SHA": railway_sha,
+        }
+    )
+
+    await bot.start_up()
+    await bot.restart(config=config)
+
+    assert [line for line in bot.logs if "ready sha=" in line][-1] == (
+        f"fplbot.app ready sha={railway_sha}"
+    )
+    assert bot.owner.replies[-1] == "online v0.1.0 (fedcba9)"
 
 
 def storage_warnings(bot: BotHarness) -> list[str]:
